@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 
         // 2. Fetch user details from Clerk
         const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
-        const userIds = activeShifts.map(s => s.userId)
+        const userIds = activeShifts.map((s: any) => s.userId)
 
         // Clerk getUserList can take an array of userIds
         const clerkUsers = await clerk.users.getUserList({
@@ -39,12 +39,12 @@ export async function GET(req: Request) {
         })
 
         // 3. Map active shifts to Clerk users (ensures we show everyone we can find)
-        const staffOnDuty = activeShifts.map(shift => {
-            const user = clerkUsers.data.find(u => u.id === shift.userId)
+        const staffOnDuty = activeShifts.map((shift: any) => {
+            const user = clerkUsers.data.find((u: any) => u.id === shift.userId)
             if (!user) return null
 
             // Find roblox username from external accounts
-            const robloxAccount = user.externalAccounts.find(a => {
+            const robloxAccount = user.externalAccounts.find((a: any) => {
                 const provider = a.provider as string
                 return provider === "roblox" || provider === "oauth_roblox" || provider === "oauth_custom_roblox" || provider === "oauth_custom_custom_roblox"
             })

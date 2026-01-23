@@ -54,7 +54,7 @@ export async function POST(req: Request) {
         // 2. Calculate Reversals
         const service = new RollbackService()
         // Map DB logs to the format expected by service (id, command)
-        const logsForService = logs.map(l => ({ id: l.id, command: l.command || "" }))
+        const logsForService = logs.map((l: any) => ({ id: l.id, command: l.command || "" }))
         const reversals = service.calculateReversals(logsForService)
 
         // 3. Queue Reversals
