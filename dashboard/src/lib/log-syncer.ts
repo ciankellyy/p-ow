@@ -244,7 +244,7 @@ async function handleShutdownCommand(log: any, serverId: string) {
                 timestamp: now.toISOString(),
                 initiatedBy: playerName,
                 shiftsEnded: activeShifts.length,
-                affectedUserIds: activeShifts.map(s => s.userId)
+                affectedUserIds: activeShifts.map((s: any) => s.userId)
             })
         },
         create: {
@@ -253,7 +253,7 @@ async function handleShutdownCommand(log: any, serverId: string) {
                 timestamp: now.toISOString(),
                 initiatedBy: playerName,
                 shiftsEnded: activeShifts.length,
-                affectedUserIds: activeShifts.map(s => s.userId)
+                affectedUserIds: activeShifts.map((s: any) => s.userId)
             })
         }
     })
@@ -322,7 +322,7 @@ async function handleLogCommand(log: any, serverId: string, client: PrcClient) {
         if (matches.length === 1) {
             target = parsePrcPlayer(matches[0].Player)
         } else if (matches.length > 1) {
-            const matchNames = matches.slice(0, 3).map(p => parsePrcPlayer(p.Player).name).join(", ")
+            const matchNames = matches.slice(0, 3).map((p: any) => parsePrcPlayer(p.Player).name).join(", ")
             await client.executeCommand(`:pm ${playerName} [Project Overwatch] Multiple matches: ${matchNames}. Be more specific.`).catch(() => { })
             return
         } else {
@@ -370,7 +370,7 @@ async function handleLogCommand(log: any, serverId: string, client: PrcClient) {
             }
 
             if (recentMatches.length > 1) {
-                const matchNames = recentMatches.slice(0, 3).map(m => m.name).join(", ")
+                const matchNames = recentMatches.slice(0, 3).map((m: any) => m.name).join(", ")
                 await client.executeCommand(`:pm ${playerName} [Project Overwatch] Multiple recently left matches: ${matchNames}. Be more specific.`).catch(() => { })
                 return
             }
@@ -436,16 +436,16 @@ export async function fetchAndSaveLogs(apiKey: string, serverId: string) {
         ])
 
         const parsedLogs = [
-            ...join.map(l => {
+            ...join.map((l: any) => {
                 const p = parsePrcPlayer(l.Player)
                 return { ...l, _type: "join", timestamp: l.Timestamp, PlayerName: p.name, PlayerId: p.id }
             }),
-            ...kill.map(l => {
+            ...kill.map((l: any) => {
                 const killer = parsePrcPlayer(l.Killer)
                 const victim = parsePrcPlayer(l.Killed)
                 return { ...l, _type: "kill", timestamp: l.Timestamp, KillerName: killer.name, KillerId: killer.id, VictimName: victim.name, VictimId: victim.id }
             }),
-            ...command.map(l => {
+            ...command.map((l: any) => {
                 const p = parsePrcPlayer(l.Player)
                 return { ...l, _type: "command", timestamp: l.Timestamp, PlayerName: p.name, PlayerId: p.id, Command: l.Command }
             })
@@ -453,7 +453,7 @@ export async function fetchAndSaveLogs(apiKey: string, serverId: string) {
 
         if (parsedLogs.length === 0) return { parsedLogs: [], newLogsCount: 0 }
 
-        const timestamps = Array.from(new Set(parsedLogs.map(l => l.timestamp)))
+        const timestamps = Array.from(new Set(parsedLogs.map((l: any) => l.timestamp)))
         const existingLogs = await prisma.log.findMany({
             where: { serverId, prcTimestamp: { in: timestamps } },
             select: { type: true, prcTimestamp: true }
@@ -534,7 +534,7 @@ export async function fetchAndSaveLogs(apiKey: string, serverId: string) {
                 if (server?.raidAlertChannelId) {
                     // Filter logs to only include those from users NOT registered in Clerk
                     // and not "Remote Server"
-                    const logsWithMemberInfo = await Promise.all(newCommandLogsForDetection.map(async (log) => {
+                    const logsWithMemberInfo = await Promise.all(newCommandLogsForDetection.map(async (log: any) => {
                         const playerName = log.playerName || "Unknown"
                         const playerId = log.playerId || "0"
                         
@@ -545,8 +545,8 @@ export async function fetchAndSaveLogs(apiKey: string, serverId: string) {
                     }))
 
                     const filteredLogs = logsWithMemberInfo
-                        .filter(item => !item.isAuthorized)
-                        .map(item => item.log)
+                        .filter((item: any) => !item.isAuthorized)
+                        .map((item: any) => item.log)
 
                     if (filteredLogs.length > 0) {
                         const detector = new RaidDetectorService()
@@ -560,9 +560,9 @@ export async function fetchAndSaveLogs(apiKey: string, serverId: string) {
                             // Create rich embed payload
                             const embed = {
                                 title: "⚠️ RAID DETECTION ALERT",
-                                description: `Suspicious activity detected on **${server.name}**\n${staffPing} Please investigate immediately.`,
+                                description: `Suspicious activity detected on **${server.name}**\n${staffPing} Please investigate immediately.`, 
                                 color: 0xFF0000, // Red
-                                fields: detections.map(d => ({
+                                fields: detections.map((d: any) => ({
                                     name: `${d.type}`,
                                     value: `**Roblox User:** ${d.userName} (ID: \`${d.userId}\`)\n**Details:** ${d.details}`,
                                     inline: false

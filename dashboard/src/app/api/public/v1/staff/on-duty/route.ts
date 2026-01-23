@@ -26,14 +26,14 @@ export async function GET(req: Request) {
         if (activeShifts.length === 0) return NextResponse.json([])
 
         const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
-        const userIds = activeShifts.map(s => s.userId)
+        const userIds = activeShifts.map((s: any) => s.userId)
         const clerkUsers = await clerk.users.getUserList({ userId: userIds })
 
-        const staffOnDuty = activeShifts.map(shift => {
-            const user = clerkUsers.data.find(u => u.id === shift.userId)
+        const staffOnDuty = activeShifts.map((shift: any) => {
+            const user = clerkUsers.data.find((u: any) => u.id === shift.userId)
             if (!user) return null
 
-            const robloxAccount = user.externalAccounts.find(a => {
+            const robloxAccount = user.externalAccounts.find((a: any) => {
                 const p = a.provider as string
                 return p === "roblox" || p === "oauth_roblox" || p === "oauth_custom_roblox" || p === "oauth_custom_custom_roblox"
             })

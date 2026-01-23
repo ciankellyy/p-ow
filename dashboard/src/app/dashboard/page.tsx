@@ -146,6 +146,7 @@ export default async function ServerSelectorPage() {
                     <DashboardFooter />
                 </div>
             </div>
+            </div>
         </EnsureDiscordConnection>
     )
 }

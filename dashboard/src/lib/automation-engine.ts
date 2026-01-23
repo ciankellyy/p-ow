@@ -137,7 +137,7 @@ export class AutomationEngine {
                 await prisma.automation.update({
                     where: { id: automation.id },
                     data: { lastRunAt: new Date() }
-                }).catch(e => console.error(`[AUTOMATION] Failed to update lastRunAt:`, e))
+                }).catch((e: any) => console.error(`[AUTOMATION] Failed to update lastRunAt:`, e))
             }
         } catch (e) {
             console.error(`[AUTOMATION] Error processing trigger ${type}: `, e)
