@@ -10,6 +10,7 @@ import { EnsureDiscordConnection } from "@/components/auth/ensure-discord"
 import { PrcClient } from "@/lib/prc"
 import { RandomGreeting } from "@/components/random-greeting"
 import { DashboardFooter } from "@/components/layout/dashboard-footer"
+import { WarningBanner } from "@/components/ui/warning-banner"
 
 // Helper to fetch stats SAFELY on server
 async function fetchServerStats(apiUrl: string) {
@@ -37,10 +38,12 @@ export default async function ServerSelectorPage() {
 
     return (
         <EnsureDiscordConnection>
-            <div className="min-h-screen bg-[#111] p-8 font-sans text-zinc-100">
-                <div className="mx-auto max-w-7xl space-y-8">
-                    {/* Header */}
-                    <div className="flex items-center justify-between">
+            <div className="min-h-screen bg-[#111] font-sans text-zinc-100">
+                <WarningBanner />
+                <div className="p-8">
+                    <div className="mx-auto max-w-7xl space-y-8">
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             {/* Logo */}
                             <img

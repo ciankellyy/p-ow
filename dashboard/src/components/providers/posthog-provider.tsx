@@ -94,6 +94,7 @@ export function PostHogProvider({ children }: { children: ReactNode }) {
             })
 
             setPosthogInstance(posthog)
+            window.dispatchEvent(new Event('posthog-ready'))
         }
 
         initPostHog()
