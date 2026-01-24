@@ -3,6 +3,7 @@ import { PlayerPanel } from './components/PlayerPanel'
 import { Settings } from './components/Settings'
 import { LoginScreen } from './components/LoginScreen'
 import { useOcr } from './hooks/useOcr'
+import { initPostHog, identifyUser, resetUser, captureEvent } from './lib/posthog'
 import logo from './assets/logo.png'
 
 type View = 'main' | 'settings'
@@ -16,6 +17,27 @@ interface PlayerData {
     online?: boolean
     team?: string
     punishmentCount?: number
+    recentPunishments?: Array<{
+        id: string
+        type: string
+        reason: string
+        createdAt: string
+        resolved: boolean
+    }>
+}
+
+// Helper to parse JWT payload for analytics (trusting server verification for actual access)
+function parseJwt(token: string) {
+    try {
+        const base64Url = token.split('.')[1]
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+        const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+        }).join(''))
+        return JSON.parse(jsonPayload)
+    } catch (e) {
+        return null
+    }
 }
 
 function App() {
@@ -31,11 +53,29 @@ function App() {
     // Check auth and load settings on mount
     useEffect(() => {
         const init = async () => {
+            initPostHog()
+
             const [token, settings] = await Promise.all([
                 window.electronAPI.getAuthToken(),
                 window.electronAPI.getSettings()
             ])
-            setIsLoggedIn(!!token)
+
+            if (token) {
+                setIsLoggedIn(true)
+                const payload = parseJwt(token)
+                if (payload) {
+                    identifyUser({
+                        userId: payload.userId,
+                        username: payload.username,
+                        robloxId: payload.robloxId,
+                        robloxUsername: payload.robloxUsername,
+                        discordId: payload.discordId
+                    })
+                }
+            } else {
+                setIsLoggedIn(false)
+            }
+
             setScanHotkey(settings.hotkey)
             setToggleHotkey(settings.toggleHotkey)
             setIsLoading(false)
@@ -65,12 +105,14 @@ function App() {
                     await lookupPlayer(detectedName)
                 } else {
                     setError('No matching player found')
+                    captureEvent('vision_player_not_found', { reason: 'ocr_no_match' })
                 }
             } catch (err: any) {
                 if (err.message === 'Unauthorized') {
                     console.log('Session expired during OCR, logging out...')
                     await window.electronAPI.clearAuthToken()
                     setIsLoggedIn(false)
+                    resetUser()
                 } else {
                     console.error('Capture processing error:', err)
                     setError('Identification failed')
@@ -87,6 +129,7 @@ function App() {
             const token = await window.electronAPI.getAuthToken()
             if (!token) {
                 setIsLoggedIn(false)
+                resetUser()
                 return
             }
 
@@ -104,11 +147,20 @@ function App() {
                 const data = await res.json()
                 setPlayer(data)
                 setError(null)
+                captureEvent('vision_player_found', {
+                    player_id: data.id,
+                    player_name: data.name,
+                    player_display_name: data.displayName,
+                    has_punishments: (data.punishmentCount || 0) > 0,
+                    punishment_count: data.punishmentCount || 0
+                })
             } else if (res.status === 401) {
                 setIsLoggedIn(false)
                 await window.electronAPI.clearAuthToken()
+                resetUser()
             } else if (res.status === 404) {
                 setError('Player not found')
+                captureEvent('vision_player_not_found', { reason: 'api_404', searched_username: username })
             } else {
                 setError('Failed to lookup player')
             }
@@ -128,10 +180,22 @@ function App() {
         await window.electronAPI.clearAuthToken()
         setIsLoggedIn(false)
         setPlayer(null)
+        resetUser()
     }
 
-    const handleLoginSuccess = () => {
+    const handleLoginSuccess = (user?: any) => {
         setIsLoggedIn(true)
+        if (user) {
+            identifyUser({
+                userId: user.userId || user.id,
+                username: user.username,
+                robloxId: user.robloxId,
+                robloxUsername: user.robloxUsername,
+                discordId: user.discordId,
+                name: user.name,
+                image: user.image
+            })
+        }
     }
 
     const handleHotkeyChange = (newScanHotkey: string, newToggleHotkey: string) => {

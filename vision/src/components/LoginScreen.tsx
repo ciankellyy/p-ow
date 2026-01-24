@@ -4,7 +4,7 @@ import logo from '../assets/logo.png'
 const API_BASE = 'https://pow.ciankelly.xyz'
 
 interface LoginScreenProps {
-    onLoginSuccess: () => void
+    onLoginSuccess: (user: any) => void
 }
 
 export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
@@ -74,7 +74,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 const data = await res.json()
                 if (data.valid) {
                     await window.electronAPI.storeAuthToken(tokenInput.trim())
-                    onLoginSuccess()
+                    onLoginSuccess(data.user)
                 } else {
                     setError('Invalid token. Please try again.')
                 }
