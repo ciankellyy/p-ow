@@ -13,11 +13,38 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     const [tokenInput, setTokenInput] = useState('')
     const [error, setError] = useState<string | null>(null)
 
-    const handleOpenBrowser = () => {
-        // Open browser to dashboard for login
-        // User will log in via Clerk, then be shown a token to copy
-        window.open(`${API_BASE}/vision-auth`, '_blank')
-        setShowTokenInput(true)
+    const handleOpenBrowser = async () => {
+        setIsLoading(true)
+        setError(null)
+
+        try {
+            // Generate HMAC signature for verification
+            const signature = await window.electronAPI.generateSignature()
+
+            // Get a one-time handshake code from the API
+            const res = await fetch(`${API_BASE}/api/vision/handshake`, {
+                method: 'POST',
+                headers: {
+                    'X-Vision-Sig': signature
+                }
+            })
+
+            if (!res.ok) {
+                setError('Failed to connect to POW servers.')
+                setIsLoading(false)
+                return
+            }
+
+            const { code } = await res.json()
+
+            // Open browser with the one-time code
+            window.electronAPI.openExternal(`${API_BASE}/vision-auth?code=${code}`)
+            setShowTokenInput(true)
+        } catch (e) {
+            setError('Connection failed. Check your internet connection.')
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     const handleSubmitToken = async () => {
@@ -30,10 +57,16 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         setError(null)
 
         try {
+            // Generate HMAC signature
+            const signature = await window.electronAPI.generateSignature()
+
             // Verify the token with the API
             const res = await fetch(`${API_BASE}/api/vision/auth`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Vision-Sig': signature
+                },
                 body: JSON.stringify({ token: tokenInput.trim() })
             })
 

@@ -25,70 +25,138 @@ export function useOcr() {
         }
     }, [])
 
-    const processCapture = useCallback(async (imageDataUrl: string): Promise<string | null> => {
+    const processCapture = useCallback(async (imageDataUrl: string, knownPlayers?: Set<string>): Promise<string | null> => {
         setIsProcessing(true)
 
         try {
             // Validate the data URL format
-            if (!imageDataUrl || typeof imageDataUrl !== 'string') {
-                console.error('Invalid image data: not a string')
+            if (!imageDataUrl || typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:image')) {
+                console.error('Invalid image data')
                 return null
             }
 
-            if (!imageDataUrl.startsWith('data:image')) {
-                console.error('Invalid image data: not a data URL, starts with:', imageDataUrl.substring(0, 50))
-                return null
+            // Preprocess image for better OCR
+            const preprocessImage = (url: string): Promise<string> => {
+                return new Promise((resolve, reject) => {
+                    const img = new Image()
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas')
+                        const ctx = canvas.getContext('2d')
+                        if (!ctx) {
+                            reject('No canvas context')
+                            return
+                        }
+
+                        // Scale up 2.5x for better small text recognition
+                        const scale = 2.5
+                        canvas.width = img.width * scale
+                        canvas.height = img.height * scale
+
+                        // Draw scaled image
+                        ctx.imageSmoothingEnabled = false
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+                        const data = imageData.data
+
+                        for (let i = 0; i < data.length; i += 4) {
+                            // Grayscale
+                            const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
+
+                            // Thresholding
+                            const isText = gray > 150
+                            const val = isText ? 0 : 255
+
+                            data[i] = val     // R
+                            data[i + 1] = val // G
+                            data[i + 2] = val // B
+                        }
+
+                        ctx.putImageData(imageData, 0, 0)
+                        resolve(canvas.toDataURL('image/png'))
+                    }
+                    img.onerror = (e) => reject(e)
+                    img.src = url
+                })
             }
 
-            console.log('Processing image, dataURL length:', imageDataUrl.length)
+            const processedImage = await preprocessImage(imageDataUrl)
 
             // Wait for worker to be ready
             if (!workerRef.current) {
-                console.log('Worker not ready, initializing...')
                 const worker = await createWorker('eng')
+                await worker.setParameters({
+                    tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@',
+                    tessedit_pageseg_mode: '6', // Assume a uniform block of text (better for multi-word scans)
+                })
                 workerRef.current = worker
             }
 
-            // Process directly with the dataURL - Tesseract.js supports data URLs
-            const result = await workerRef.current.recognize(imageDataUrl)
-            const text = result.data.text
+            // Process the preprocessed image
+            const result = await workerRef.current.recognize(processedImage)
+            const text = result.data.text.trim()
+            console.log('OCR Raw Text:', text)
 
-            console.log('OCR detected text length:', text.length)
-            console.log('OCR text preview:', text.substring(0, 300))
+            // Split into candidate words (splitting by whitespace and non-alphanumeric separators)
+            const candidates = text.split(/[\s\n]+/).filter(w => w.length >= 3)
 
-            // Roblox usernames: 3-20 chars, alphanumeric + underscore, must start with letter
-            const usernamePattern = /[A-Za-z][A-Za-z0-9_]{2,19}/g
+            // If we have a known player list, strictly match against it
+            if (knownPlayers && knownPlayers.size > 0) {
+                console.log(`Matching ${candidates.length} OCR words against ${knownPlayers.size} known players...`)
+
+                let bestMatch: string | null = null
+                let bestDistance = 999
+
+                // For every word found in OCR...
+                for (const word of candidates) {
+                    const cleanWord = word.replace('@', '') // Remove handle matching char
+
+                    // Check against every known player
+                    for (const player of knownPlayers) {
+                        // Exact match (case insensitive)
+                        if (cleanWord.toLowerCase() === player.toLowerCase()) {
+                            console.log(`✅ Exact match found: ${player}`)
+                            return player
+                        }
+
+                        // Fuzzy match (Levenshtein)
+                        const dist = getLevenshteinDistance(cleanWord.toLowerCase(), player.toLowerCase())
+
+                        // Allow distance of 1 for words < 5 chars, distance of 2 for longer
+                        const maxDist = player.length < 5 ? 1 : 2
+
+                        if (dist <= maxDist && dist < bestDistance) {
+                            bestDistance = dist
+                            bestMatch = player
+                        }
+                    }
+                }
+
+                if (bestMatch) {
+                    console.log(`✅ Fuzzy match found: ${bestMatch} (distance: ${bestDistance})`)
+                    return bestMatch
+                }
+
+                console.log('❌ No match found in known players list')
+                return null
+            }
+
+            // Fallback: Regex matching if no player list available (unlikely with polling on)
+            console.log('⚠️ No active player list available, falling back to regex')
+            const usernamePattern = /@?[A-Za-z0-9_]{3,20}/g
             const matches = text.match(usernamePattern)
 
             if (matches && matches.length > 0) {
                 // Filter out common false positives
-                const commonWords = new Set([
-                    'THE', 'AND', 'FOR', 'ARE', 'BUT', 'NOT', 'YOU', 'ALL', 'CAN', 'HER',
-                    'WAS', 'ONE', 'OUR', 'OUT', 'HAS', 'HAD', 'HIS', 'HIM', 'SHE', 'HER',
-                    'ITS', 'WHO', 'HOW', 'NOW', 'NEW', 'GET', 'GOT', 'DID', 'SAY', 'SAW',
-                    'SEE', 'USE', 'WAY', 'MAY', 'DAY', 'TOO', 'ANY', 'BEEN', 'CALL', 'COME',
-                    'COULD', 'EACH', 'FIND', 'FIRST', 'FROM', 'HAVE', 'INTO', 'JUST', 'KNOW',
-                    'LIKE', 'LOOK', 'MADE', 'MAKE', 'MORE', 'MOST', 'MUST', 'NAME', 'ONLY',
-                    'OVER', 'PART', 'PEOPLE', 'SAID', 'SOME', 'THAN', 'THAT', 'THEM', 'THEN',
-                    'THERE', 'THESE', 'THEY', 'THIS', 'TIME', 'VERY', 'WANT', 'WATER', 'WHAT',
-                    'WHEN', 'WHERE', 'WHICH', 'WILL', 'WITH', 'WORD', 'WORK', 'WOULD', 'YEAR',
-                    'YOUR', 'ROBLOX', 'PLAYER', 'TEAM', 'GAME', 'SERVER', 'ONLINE', 'OFFLINE',
-                    'MENU', 'FILE', 'EDIT', 'VIEW', 'HELP', 'TOOLS', 'WINDOW', 'HOME', 'BACK',
-                    'NEXT', 'PREV', 'CLOSE', 'OPEN', 'SAVE', 'LOAD', 'EXIT', 'QUIT', 'START',
-                    'STOP', 'PLAY', 'PAUSE', 'OPTIONS', 'SETTINGS', 'PREFERENCES'
-                ])
+                const commonWords = new Set(['THE', 'AND', 'ROBLOX', 'PLAYER', 'MENU', 'admin', 'chat'])
+                const bestMatch = matches.find(m => {
+                    const clean = m.replace('@', '').toUpperCase()
+                    return !commonWords.has(clean) && clean.length >= 3
+                })
 
-                const filtered = matches.filter(m =>
-                    !commonWords.has(m.toUpperCase()) && m.length >= 3
-                )
-
-                if (filtered.length > 0) {
-                    console.log('Detected username candidates:', filtered.slice(0, 5))
-                    return filtered[0]
-                }
+                if (bestMatch) return bestMatch.replace('@', '')
             }
 
-            console.log('No valid username found in OCR text')
             return null
         } catch (error) {
             console.error('OCR error:', error)
@@ -99,4 +167,28 @@ export function useOcr() {
     }, [])
 
     return { processCapture, isProcessing }
+}
+
+// Levenshtein distance implementation
+function getLevenshteinDistance(a: string, b: string): number {
+    if (a.length === 0) return b.length
+    if (b.length === 0) return a.length
+
+    const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null))
+
+    for (let i = 0; i <= b.length; i++) matrix[i][0] = i
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            const indicator = a[j - 1] === b[i - 1] ? 0 : 1
+            matrix[i][j] = Math.min(
+                matrix[i - 1][j] + 1,
+                matrix[i][j - 1] + 1,
+                matrix[i - 1][j - 1] + indicator
+            )
+        }
+    }
+
+    return matrix[b.length][a.length]
 }

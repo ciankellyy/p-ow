@@ -15,6 +15,8 @@ interface ElectronAPI {
     clearAuthToken: () => Promise<boolean>
     onTriggerCapture: (callback: () => void) => () => void
     moveWindow: (x: number, y: number) => void
+    openExternal: (url: string) => Promise<void>
+    generateSignature: () => Promise<string>
 }
 
 declare global {

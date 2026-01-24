@@ -26,6 +26,7 @@ function App() {
     const [error, setError] = useState<string | null>(null)
     const [scanHotkey, setScanHotkey] = useState('Alt+V')
     const [toggleHotkey, setToggleHotkey] = useState('Alt+Shift+V')
+    const [activePlayers, setActivePlayers] = useState<Set<string>>(new Set())
     const { processCapture, isProcessing } = useOcr()
 
     // Check auth and load settings on mount
@@ -43,6 +44,38 @@ function App() {
         init()
     }, [])
 
+    // Poll for active players every 15s
+    useEffect(() => {
+        if (!isLoggedIn) return
+
+        const fetchPlayers = async () => {
+            try {
+                const token = await window.electronAPI.getAuthToken()
+                if (!token) return
+
+                const signature = await window.electronAPI.generateSignature()
+                const res = await fetch(`https://pow.ciankelly.xyz/api/vision/users`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'X-Vision-Sig': signature
+                    }
+                })
+
+                if (res.ok) {
+                    const users: string[] = await res.json()
+                    console.log(`Updated active player list: ${users.length} players`)
+                    setActivePlayers(new Set(users))
+                }
+            } catch (e) {
+                console.error('Failed to fetch players list:', e)
+            }
+        }
+
+        fetchPlayers()
+        const interval = setInterval(fetchPlayers, 15000)
+        return () => clearInterval(interval)
+    }, [isLoggedIn])
+
     // Listen for capture trigger from hotkey
     useEffect(() => {
         const cleanup = window.electronAPI.onTriggerCapture(async () => {
@@ -55,18 +88,18 @@ function App() {
                 return
             }
 
-            const detectedName = await processCapture(captureResult.image)
+            const detectedName = await processCapture(captureResult.image, activePlayers)
             if (detectedName) {
                 // Move panel near the cursor where username was detected
                 window.electronAPI.moveWindow(captureResult.cursorX, captureResult.cursorY)
                 await lookupPlayer(detectedName)
             } else {
-                setError('Could not detect player name')
+                setError('No matching player found')
             }
         })
 
         return cleanup
-    }, [processCapture])
+    }, [processCapture, activePlayers])
 
     // Lookup player via POW API
     const lookupPlayer = async (username: string) => {
@@ -77,8 +110,14 @@ function App() {
                 return
             }
 
+            // Generate HMAC signature
+            const signature = await window.electronAPI.generateSignature()
+
             const res = await fetch(`https://pow.ciankelly.xyz/api/vision/player?username=${encodeURIComponent(username)}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'X-Vision-Sig': signature
+                }
             })
 
             if (res.ok) {

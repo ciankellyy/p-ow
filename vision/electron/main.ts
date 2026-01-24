@@ -1,5 +1,6 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, desktopCapturer, screen } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, desktopCapturer, screen, shell } from 'electron'
 import * as path from 'path'
+import crypto from 'crypto'
 import Store from 'electron-store'
 
 // Store schema type
@@ -144,10 +145,13 @@ ipcMain.handle('capture-screen', async () => {
         const display = screen.getDisplayNearestPoint(cursorPoint)
         console.log('[Screen Capture] Cursor at:', cursorPoint.x, cursorPoint.y)
 
-        // Capture the full screen first
+        // Capture at full resolution (accounting for Retina/High DPI)
+        const width = display.size.width * display.scaleFactor
+        const height = display.size.height * display.scaleFactor
+
         const sources = await desktopCapturer.getSources({
             types: ['screen'],
-            thumbnailSize: { width: display.bounds.width, height: display.bounds.height }
+            thumbnailSize: { width, height }
         })
 
         if (sources.length === 0) {
@@ -163,9 +167,9 @@ ipcMain.handle('capture-screen', async () => {
             return { image: null, cursorX: cursorPoint.x, cursorY: cursorPoint.y }
         }
 
-        // Define capture region around cursor (400x200 box)
+        // Define capture region around cursor (800x200 box)
         // Roblox name tags are typically above the character, so offset upward
-        const regionWidth = 400
+        const regionWidth = 800
         const regionHeight = 200
 
         // Calculate region bounds, ensuring we stay within screen
@@ -252,6 +256,27 @@ ipcMain.handle('get-auth-token', () => {
 ipcMain.handle('clear-auth-token', () => {
     store.delete('authToken')
     return true
+})
+
+// Shared secret for HMAC verification
+const VISION_HMAC_SECRET = "REMOVED_VISION_HMAC_SECRET"
+// Generate a random instance ID for this session
+const SESSION_INSTANCE_ID = crypto.randomBytes(8).toString('hex')
+
+ipcMain.handle('generate-signature', () => {
+    const timestamp = Date.now().toString()
+    const message = `${timestamp}:${SESSION_INSTANCE_ID}`
+    const signature = crypto
+        .createHmac('sha256', VISION_HMAC_SECRET)
+        .update(message)
+        .digest('hex')
+
+    return `${timestamp}:${SESSION_INSTANCE_ID}:${signature}`
+})
+
+// Open URL in system default browser
+ipcMain.handle('open-external', async (_event, url: string) => {
+    await shell.openExternal(url)
 })
 
 // Move window to position near cursor (for positioning near detected username)

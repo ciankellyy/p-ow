@@ -1,18 +1,33 @@
 import { NextResponse } from "next/server"
 import { jwtVerify } from "jose"
 import { prisma } from "@/lib/db"
+import { verifyVisionSignature, visionCorsHeaders } from "@/lib/vision-auth"
 
 const VISION_SECRET = new TextEncoder().encode(
     process.env.VISION_JWT_SECRET || "REMOVED_VISION_JWT_SECRET"
 )
 
+// Handle preflight requests
+export async function OPTIONS() {
+    return NextResponse.json({}, { headers: visionCorsHeaders })
+}
+
 // Lookup player by username
 export async function GET(req: Request) {
     try {
+        // Verify the request is from Vision app using HMAC signature
+        const signature = req.headers.get("X-Vision-Sig")
+        if (!verifyVisionSignature(signature)) {
+            return NextResponse.json(
+                { error: "Unauthorized" },
+                { status: 403, headers: visionCorsHeaders }
+            )
+        }
+
         // Verify Vision token from Authorization header
         const authHeader = req.headers.get("Authorization")
         if (!authHeader?.startsWith("Bearer ")) {
-            return NextResponse.json({ error: "No token provided" }, { status: 401 })
+            return NextResponse.json({ error: "No token provided" }, { status: 401, headers: visionCorsHeaders })
         }
 
         const token = authHeader.substring(7)
@@ -22,7 +37,7 @@ export async function GET(req: Request) {
                 audience: "pow-vision"
             })
         } catch {
-            return NextResponse.json({ error: "Invalid token" }, { status: 401 })
+            return NextResponse.json({ error: "Invalid token" }, { status: 401, headers: visionCorsHeaders })
         }
 
         // Get username from query
@@ -30,7 +45,7 @@ export async function GET(req: Request) {
         const username = url.searchParams.get("username")
 
         if (!username) {
-            return NextResponse.json({ error: "Username required" }, { status: 400 })
+            return NextResponse.json({ error: "Username required" }, { status: 400, headers: visionCorsHeaders })
         }
 
         // Lookup user on Roblox
@@ -47,14 +62,14 @@ export async function GET(req: Request) {
         )
 
         if (!robloxRes.ok) {
-            return NextResponse.json({ error: "Failed to lookup user" }, { status: 502 })
+            return NextResponse.json({ error: "Failed to lookup user" }, { status: 502, headers: visionCorsHeaders })
         }
 
         const robloxData = await robloxRes.json()
         const userData = robloxData.data?.[0]
 
         if (!userData) {
-            return NextResponse.json({ error: "User not found" }, { status: 404 })
+            return NextResponse.json({ error: "User not found" }, { status: 404, headers: visionCorsHeaders })
         }
 
         // Get avatar
@@ -102,9 +117,11 @@ export async function GET(req: Request) {
             avatar,
             punishmentCount,
             recentPunishments
-        })
+        }, { headers: visionCorsHeaders })
     } catch (error) {
         console.error("[Vision Player] Error:", error)
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+        return NextResponse.json({ error: "Internal server error" }, { status: 500, headers: visionCorsHeaders })
     }
 }
+
+

@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth-clerk"
 import { SignJWT, jwtVerify } from "jose"
+import { verifyVisionSignature, visionCorsHeaders } from "@/lib/vision-auth"
 
 // Secret for Vision tokens - should be in env vars in production
 const VISION_SECRET = new TextEncoder().encode(
     process.env.VISION_JWT_SECRET || "REMOVED_VISION_JWT_SECRET"
 )
+
+// Handle preflight requests
+export async function OPTIONS() {
+    return NextResponse.json({}, { headers: visionCorsHeaders })
+}
 
 // Generate a token for Vision app
 export async function GET(req: Request) {
@@ -13,7 +19,7 @@ export async function GET(req: Request) {
         const session = await getSession()
 
         if (!session?.user) {
-            return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
+            return NextResponse.json({ error: "Not authenticated" }, { status: 401, headers: visionCorsHeaders })
         }
 
         // Create a JWT token for Vision
@@ -40,20 +46,29 @@ export async function GET(req: Request) {
                 image: session.user.image,
                 robloxUsername: session.user.robloxUsername
             }
-        })
+        }, { headers: visionCorsHeaders })
     } catch (error) {
         console.error("[Vision Auth] Error:", error)
-        return NextResponse.json({ error: "Failed to generate token" }, { status: 500 })
+        return NextResponse.json({ error: "Failed to generate token" }, { status: 500, headers: visionCorsHeaders })
     }
 }
 
 // Verify a Vision token
 export async function POST(req: Request) {
     try {
+        // Verify the request is from Vision app using HMAC signature
+        const signature = req.headers.get("X-Vision-Sig")
+        if (!verifyVisionSignature(signature)) {
+            return NextResponse.json(
+                { error: "Unauthorized" },
+                { status: 403, headers: visionCorsHeaders }
+            )
+        }
+
         const { token } = await req.json()
 
         if (!token) {
-            return NextResponse.json({ valid: false, error: "No token provided" }, { status: 400 })
+            return NextResponse.json({ valid: false, error: "No token provided" }, { status: 400, headers: visionCorsHeaders })
         }
 
         const { payload } = await jwtVerify(token, VISION_SECRET, {
@@ -70,9 +85,9 @@ export async function POST(req: Request) {
                 robloxUsername: payload.robloxUsername,
                 discordId: payload.discordId
             }
-        })
+        }, { headers: visionCorsHeaders })
     } catch (error) {
         console.error("[Vision Auth] Token verification failed:", error)
-        return NextResponse.json({ valid: false, error: "Invalid token" }, { status: 401 })
+        return NextResponse.json({ valid: false, error: "Invalid token" }, { status: 401, headers: visionCorsHeaders })
     }
 }

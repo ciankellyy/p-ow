@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAuthToken: () => ipcRenderer.invoke('get-auth-token'),
     clearAuthToken: () => ipcRenderer.invoke('clear-auth-token'),
 
+    // Generate HMAC signature for API requests
+    generateSignature: () => ipcRenderer.invoke('generate-signature'),
+
     // Listen for capture trigger from main process
     onTriggerCapture: (callback: () => void) => {
         ipcRenderer.on('trigger-capture', callback)
@@ -28,7 +31,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // Move window to position (for positioning near detected username)
-    moveWindow: (x: number, y: number) => ipcRenderer.send('move-window', x, y)
+    moveWindow: (x: number, y: number) => ipcRenderer.send('move-window', x, y),
+
+    // Open URL in system default browser
+    openExternal: (url: string) => ipcRenderer.invoke('open-external', url)
 })
 
 // Type definitions for renderer
@@ -39,8 +45,10 @@ export interface ElectronAPI {
     storeAuthToken: (token: string) => Promise<boolean>
     getAuthToken: () => Promise<string | null>
     clearAuthToken: () => Promise<boolean>
+    generateSignature: () => Promise<string>
     onTriggerCapture: (callback: () => void) => () => void
     moveWindow: (x: number, y: number) => void
+    openExternal: (url: string) => Promise<void>
 }
 
 declare global {
@@ -48,3 +56,4 @@ declare global {
         electronAPI: ElectronAPI
     }
 }
+
