@@ -126,6 +126,32 @@ function registerHotkey() {
     }
 }
 
+// Helper to get screen sources with retry logic
+async function getScreenSourceWithRetry(width: number, height: number, retries = 3): Promise<Electron.DesktopCapturerSource | null> {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const sources = await desktopCapturer.getSources({
+                types: ['screen'],
+                thumbnailSize: { width, height }
+            })
+
+            // Return first valid source found
+            if (sources.length > 0) {
+                // If we found a source with a valid thumbnail, return it
+                if (!sources[0].thumbnail.isEmpty()) {
+                    return sources[0]
+                }
+            }
+            console.warn(`[Screen Capture] Attempt ${i + 1} failed: No valid sources found`)
+        } catch (e) {
+            console.error(`[Screen Capture] Attempt ${i + 1} error:`, e)
+        }
+        // Wait 100ms before retry
+        await new Promise(r => setTimeout(r, 100))
+    }
+    return null
+}
+
 // Screen capture for OCR - captures region around cursor
 ipcMain.handle('capture-screen', async () => {
     try {
@@ -140,35 +166,38 @@ ipcMain.handle('capture-screen', async () => {
             }
         }
 
-        // Get cursor position
+        // Get cursor position and active display
         const cursorPoint = screen.getCursorScreenPoint()
         const display = screen.getDisplayNearestPoint(cursorPoint)
-        console.log('[Screen Capture] Cursor at:', cursorPoint.x, cursorPoint.y)
+        console.log('[Screen Capture] Cursor at:', cursorPoint.x, cursorPoint.y, 'Display:', display.id)
 
         // Capture at full resolution (accounting for Retina/High DPI)
         const width = display.size.width * display.scaleFactor
         const height = display.size.height * display.scaleFactor
 
-        const sources = await desktopCapturer.getSources({
-            types: ['screen'],
-            thumbnailSize: { width, height }
-        })
+        // Try to get sources with retry
+        let source = await getScreenSourceWithRetry(width, height)
 
-        if (sources.length === 0) {
-            console.error('[Screen Capture] No screen sources found')
+        if (!source) {
+            console.error('[Screen Capture] Failed to get screen source after retries')
             return { image: null, cursorX: cursorPoint.x, cursorY: cursorPoint.y }
         }
 
-        const thumbnail = sources[0].thumbnail
+        // If multiple screens, try to match the correct one
+        // Note: Electron display IDs and DesktopCapturer source IDs don't always match 1:1 format perfectly across OSs
+        // We'll trust the retry logic to give us a valid Primary source (usually index 0) if single monitor
+        // For multi-monitor precision, we would strictly match `source.display_id` if available (newer Electron versions)
+
+        const thumbnail = source.thumbnail
         const fullSize = thumbnail.getSize()
 
+        // Double check validity
         if (fullSize.width === 0 || fullSize.height === 0) {
-            console.error('[Screen Capture] Thumbnail is empty')
+            console.error('[Screen Capture] Final thumbnail is empty')
             return { image: null, cursorX: cursorPoint.x, cursorY: cursorPoint.y }
         }
 
         // Define capture region around cursor (800x200 box)
-        // Roblox name tags are typically above the character, so offset upward
         const regionWidth = 800
         const regionHeight = 200
 
@@ -202,7 +231,7 @@ ipcMain.handle('capture-screen', async () => {
         })
 
         const dataUrl = croppedImage.toDataURL()
-        console.log('[Screen Capture] Cropped DataURL length:', dataUrl.length)
+        console.log('[Screen Capture] Success. DataURL length:', dataUrl.length)
 
         return {
             image: dataUrl,
@@ -301,6 +330,7 @@ ipcMain.on('move-window', (_event, x: number, y: number) => {
 })
 
 // Request screen capture permission (macOS only)
+// Request screen capture permission (macOS only)
 async function requestScreenCapturePermission(): Promise<boolean> {
     if (process.platform !== 'darwin') {
         // Windows/Linux don't require special permission
@@ -344,13 +374,69 @@ async function requestScreenCapturePermission(): Promise<boolean> {
     return newStatus === 'granted'
 }
 
+let tray: any = null
+
+function createTray() {
+    const { Tray, Menu, nativeImage } = require('electron')
+
+    // Use the icon from build resources
+    // On macOS, it wants a resized image usually, but for now we try the standard icon path
+    // In dev, we might not have the icon, so handle gracefully
+    try {
+        const iconPath = path.join(__dirname, '../../build/icon.png')
+        const image = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+
+        tray = new Tray(image)
+
+        const contextMenu = Menu.buildFromTemplate([
+            {
+                label: 'Show Overlay',
+                click: () => {
+                    if (overlayWindow) {
+                        overlayWindow.show()
+                        isOverlayVisible = true
+                    }
+                }
+            },
+            { type: 'separator' },
+            {
+                label: 'Quit POW Vision',
+                click: () => {
+                    isQuitting = true
+                    app.quit()
+                }
+            }
+        ])
+
+        tray.setToolTip('POW Vision')
+        tray.setContextMenu(contextMenu)
+
+        // Restore on double click
+        tray.on('double-click', () => {
+            if (overlayWindow) {
+                overlayWindow.show()
+                isOverlayVisible = true
+            }
+        })
+
+    } catch (e) {
+        console.error('Failed to create tray:', e)
+    }
+}
+
 // App lifecycle
 app.whenReady().then(async () => {
     // Request screen recording permission on macOS
     const hasPermission = await requestScreenCapturePermission()
     console.log('[Permission] Screen recording permission granted:', hasPermission)
 
+    // Ensure icon shows in dock/force quit
+    if (process.platform === 'darwin') {
+        app.dock.show()
+    }
+
     createOverlayWindow()
+    createTray()
     registerHotkey()
 
     app.on('activate', () => {
