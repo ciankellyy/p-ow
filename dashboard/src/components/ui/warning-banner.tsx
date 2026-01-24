@@ -9,12 +9,14 @@ export function WarningBanner() {
     const [message, setMessage] = useState<string | null>(null)
 
     useEffect(() => {
-        if (!posthog) return
+        if (!posthog) {
+            return
+        }
 
         const updateState = () => {
             const enabled = posthog.isFeatureEnabled('warning-banner')
             const payload = posthog.getFeatureFlagPayload('warning-banner')
-
+            
             if (enabled && payload) {
                 const msg = typeof payload === 'string' 
                     ? payload 
@@ -27,7 +29,19 @@ export function WarningBanner() {
 
         updateState()
         // Subscribe to feature flag updates
-        posthog.onFeatureFlags(updateState)
+        const listener = posthog.onFeatureFlags(updateState)
+
+        // Poll every 15 seconds to check for updates
+        const interval = setInterval(() => {
+            // Force reload flags to ensure freshness
+            posthog.reloadFeatureFlags() 
+            updateState()
+        }, 15000)
+
+        return () => {
+            listener() // Unsubscribe
+            clearInterval(interval)
+        }
     }, [posthog])
 
     if (!message) return null
