@@ -26,7 +26,6 @@ function App() {
     const [error, setError] = useState<string | null>(null)
     const [scanHotkey, setScanHotkey] = useState('Alt+V')
     const [toggleHotkey, setToggleHotkey] = useState('Alt+Shift+V')
-    const [activePlayers, setActivePlayers] = useState<Set<string>>(new Set())
     const { processCapture, isProcessing } = useOcr()
 
     // Check auth and load settings on mount
@@ -44,37 +43,7 @@ function App() {
         init()
     }, [])
 
-    // Poll for active players every 15s
-    useEffect(() => {
-        if (!isLoggedIn) return
 
-        const fetchPlayers = async () => {
-            try {
-                const token = await window.electronAPI.getAuthToken()
-                if (!token) return
-
-                const signature = await window.electronAPI.generateSignature()
-                const res = await fetch(`https://pow.ciankelly.xyz/api/vision/users`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'X-Vision-Sig': signature
-                    }
-                })
-
-                if (res.ok) {
-                    const users: string[] = await res.json()
-                    console.log(`Updated active player list: ${users.length} players`)
-                    setActivePlayers(new Set(users))
-                }
-            } catch (e) {
-                console.error('Failed to fetch players list:', e)
-            }
-        }
-
-        fetchPlayers()
-        const interval = setInterval(fetchPlayers, 15000)
-        return () => clearInterval(interval)
-    }, [isLoggedIn])
 
     // Listen for capture trigger from hotkey
     useEffect(() => {
@@ -88,18 +57,29 @@ function App() {
                 return
             }
 
-            const detectedName = await processCapture(captureResult.image, activePlayers)
-            if (detectedName) {
-                // Move panel near the cursor where username was detected
-                window.electronAPI.moveWindow(captureResult.cursorX, captureResult.cursorY)
-                await lookupPlayer(detectedName)
-            } else {
-                setError('No matching player found')
+            try {
+                const detectedName = await processCapture(captureResult.image)
+                if (detectedName) {
+                    // Move panel near the cursor where username was detected
+                    window.electronAPI.moveWindow(captureResult.cursorX, captureResult.cursorY)
+                    await lookupPlayer(detectedName)
+                } else {
+                    setError('No matching player found')
+                }
+            } catch (err: any) {
+                if (err.message === 'Unauthorized') {
+                    console.log('Session expired during OCR, logging out...')
+                    await window.electronAPI.clearAuthToken()
+                    setIsLoggedIn(false)
+                } else {
+                    console.error('Capture processing error:', err)
+                    setError('Identification failed')
+                }
             }
         })
 
         return cleanup
-    }, [processCapture, activePlayers])
+    }, [processCapture])
 
     // Lookup player via POW API
     const lookupPlayer = async (username: string) => {

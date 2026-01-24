@@ -17,9 +17,9 @@ export function verifyVisionSignature(header: string | null): boolean {
     const [timestamp, instanceId, signature] = parts
     const ts = parseInt(timestamp, 10)
 
-    // Check timestamp is within 30 seconds (allows for clock drift)
+    // Check timestamp is within 5 minutes (allows for clock drift)
     const now = Date.now()
-    if (isNaN(ts) || Math.abs(now - ts) > 30000) {
+    if (isNaN(ts) || Math.abs(now - ts) > 300000) {
         return false
     }
 
