@@ -1,0 +1,166 @@
+import { NextResponse } from "next/server"
+import { jwtVerify } from "jose"
+import { prisma } from "@/lib/db"
+import { PrcClient } from "@/lib/prc"
+import { getServerConfig } from "@/lib/server-config"
+import { verifyVisionSignature, visionCorsHeaders } from "@/lib/vision-auth"
+
+const VISION_SECRET = new TextEncoder().encode(
+    process.env.VISION_JWT_SECRET || "REMOVED_VISION_JWT_SECRET"
+)
+
+export async function OPTIONS() {
+    return NextResponse.json({}, { headers: visionCorsHeaders })
+}
+
+export async function POST(req: Request) {
+    try {
+        // 1. Verify HMAC signature
+        const signature = req.headers.get("X-Vision-Sig")
+        if (!verifyVisionSignature(signature)) {
+            return NextResponse.json(
+                { error: "Unauthorized - Invalid Signature" },
+                { status: 403, headers: visionCorsHeaders }
+            )
+        }
+
+        // 2. Verify JWT token
+        const authHeader = req.headers.get("Authorization")
+        if (!authHeader?.startsWith("Bearer ")) {
+            return NextResponse.json({ error: "No token provided" }, { status: 401, headers: visionCorsHeaders })
+        }
+
+        const token = authHeader.substring(7)
+        let payload: any
+        try {
+            const result = await jwtVerify(token, VISION_SECRET, {
+                issuer: "pow-dashboard",
+                audience: "pow-vision"
+            })
+            payload = result.payload
+        } catch {
+            return NextResponse.json({ error: "Invalid token" }, { status: 401, headers: visionCorsHeaders })
+        }
+
+        // 3. Parse request body
+        const body = await req.json()
+        const { playerId, playerUsername, type, reason, serverId: requestedServerId } = body
+
+        if (!playerId || !playerUsername || !type || !reason) {
+            return NextResponse.json({ error: "Missing required fields" }, { status: 400, headers: visionCorsHeaders })
+        }
+
+        const validTypes = ["Warn", "Kick", "Ban", "Ban Bolo"]
+        if (!validTypes.includes(type)) {
+            return NextResponse.json({ error: "Invalid punishment type" }, { status: 400, headers: visionCorsHeaders })
+        }
+
+        // 4. Determine server - use requested or find user's server membership
+        let serverId = requestedServerId
+        if (!serverId) {
+            // Find user's first server membership
+            const member = await prisma.member.findFirst({
+                where: { userId: payload.userId },
+                select: { serverId: true }
+            })
+            if (!member) {
+                return NextResponse.json({ error: "No server membership found" }, { status: 400, headers: visionCorsHeaders })
+            }
+            serverId = member.serverId
+        }
+
+        // 5. Log punishment to database
+        const moderatorId = payload.robloxId || payload.discordId || payload.userId
+        const punishment = await prisma.punishment.create({
+            data: {
+                serverId,
+                moderatorId,
+                userId: String(playerId),
+                type,
+                reason,
+                resolved: type === "Ban Bolo" ? false : true
+            }
+        })
+
+        // 6. Execute PRC command
+        let commandExecuted = false
+        try {
+            const server = await getServerConfig(serverId)
+            if (server?.apiUrl) {
+                const client = new PrcClient(server.apiUrl)
+                let commandStr = ""
+
+                switch (type) {
+                    case "Warn":
+                        commandStr = `:warn ${playerUsername} ${reason}`
+                        break
+                    case "Kick":
+                        commandStr = `:kick ${playerUsername} ${reason}`
+                        break
+                    case "Ban":
+                    case "Ban Bolo":
+                        commandStr = `:ban ${playerUsername} ${reason}`
+                        break
+                }
+
+                const promises: Promise<any>[] = []
+
+                if (commandStr) {
+                    promises.push(client.executeCommand(commandStr))
+                }
+
+                // Send PM for warnings
+                if (type === "Warn") {
+                    const modName = payload.robloxUsername || payload.username || "Staff"
+                    const pmCommand = `:pm ${playerUsername} You have been warned by ${modName} for ${reason} - Project Overwatch`
+                    promises.push(client.executeCommand(pmCommand))
+                }
+
+                await Promise.allSettled(promises)
+                commandExecuted = true
+
+                // Cross-server ban sync
+                if (type === "Ban" || type === "Ban Bolo") {
+                    const { syncBanToAllServers } = await import("@/lib/cross-server-sync")
+                    syncBanToAllServers(serverId, playerUsername, String(playerId), reason).catch(() => { })
+                }
+            }
+        } catch (prcError) {
+            console.error("[Vision Punish] PRC command failed:", prcError)
+            // Continue - punishment is logged even if command fails
+        }
+
+        // 7. Trigger automation (non-blocking)
+        try {
+            const { AutomationEngine } = await import("@/lib/automation-engine")
+            const context = {
+                serverId,
+                player: { name: playerUsername, id: String(playerId) },
+                punishment: {
+                    type,
+                    reason,
+                    issuer: payload.robloxUsername || payload.username || "Vision User",
+                    target: playerUsername
+                }
+            }
+
+            AutomationEngine.trigger("PUNISHMENT_ISSUED", context)
+            if (type === "Warn") AutomationEngine.trigger("WARN_ISSUED", context)
+            else if (type === "Kick") AutomationEngine.trigger("KICK_ISSUED", context)
+            else if (type.startsWith("Ban")) AutomationEngine.trigger("BAN_ISSUED", context)
+        } catch (e) {
+            console.error("[Vision Punish] Automation trigger failed:", e)
+        }
+
+        return NextResponse.json({
+            success: true,
+            punishmentId: punishment.id,
+            commandExecuted,
+            message: `${type} issued successfully`
+        }, { headers: visionCorsHeaders })
+
+    } catch (error) {
+        console.error("[Vision Punish] Error:", error)
+        return NextResponse.json({ error: "Internal server error" }, { status: 500, headers: visionCorsHeaders })
+    }
+}

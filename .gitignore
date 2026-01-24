@@ -149,3 +149,8 @@ vite.config.ts.timestamp-*
 /node_modules
 /node_modules
 /node_modules
+.DS_Store
+/vision/release
+.DS_Store
+vision/.DS_Store
+secrets.txt
