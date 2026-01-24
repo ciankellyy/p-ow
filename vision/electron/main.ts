@@ -5,6 +5,7 @@ import Store from 'electron-store'
 // Store schema type
 interface StoreSchema {
     hotkey: string
+    toggleHotkey: string
     overlayOpacity: number
     panelPosition: { x: number; y: number }
     authToken: string | null
@@ -14,6 +15,7 @@ interface StoreSchema {
 const store = new Store<StoreSchema>({
     defaults: {
         hotkey: 'Alt+V',
+        toggleHotkey: 'Alt+Shift+V',
         overlayOpacity: 0.95,
         panelPosition: { x: 100, y: 100 },
         authToken: null
@@ -49,9 +51,16 @@ function createOverlayWindow() {
     overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1)
     overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
-    // Load the React app
-    if (process.env.NODE_ENV === 'development') {
-        overlayWindow.loadURL('http://localhost:5173')
+    // Apply saved opacity
+    const savedOpacity = store.get('overlayOpacity')
+    overlayWindow.setOpacity(savedOpacity)
+
+    // Load the React app - check for dev server URL
+    const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
+    const isDev = !app.isPackaged
+
+    if (isDev) {
+        overlayWindow.loadURL(VITE_DEV_SERVER_URL)
         overlayWindow.webContents.openDevTools({ mode: 'detach' })
     } else {
         overlayWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
@@ -75,6 +84,7 @@ function createOverlayWindow() {
 
 function registerHotkey() {
     const hotkey = store.get('hotkey') as string
+    const toggleHotkey = store.get('toggleHotkey') as string
 
     // Unregister all first
     globalShortcut.unregisterAll()
@@ -97,8 +107,8 @@ function registerHotkey() {
         console.error(`Failed to register hotkey: ${hotkey}`)
     }
 
-    // Toggle visibility hotkey
-    globalShortcut.register('Alt+Shift+V', () => {
+    // Toggle visibility hotkey (configurable)
+    const toggleRegistered = globalShortcut.register(toggleHotkey, () => {
         if (overlayWindow) {
             if (isOverlayVisible) {
                 overlayWindow.hide()
@@ -109,25 +119,95 @@ function registerHotkey() {
             }
         }
     })
+
+    if (!toggleRegistered) {
+        console.error(`Failed to register toggle hotkey: ${toggleHotkey}`)
+    }
 }
 
-// Screen capture for OCR
+// Screen capture for OCR - captures region around cursor
 ipcMain.handle('capture-screen', async () => {
     try {
+        // On macOS, check for screen recording permission
+        if (process.platform === 'darwin') {
+            const { systemPreferences } = require('electron')
+            const hasPermission = systemPreferences.getMediaAccessStatus('screen')
+
+            if (hasPermission !== 'granted') {
+                console.error('[Screen Capture] Screen recording permission not granted')
+                await desktopCapturer.getSources({ types: ['screen'] })
+            }
+        }
+
+        // Get cursor position
+        const cursorPoint = screen.getCursorScreenPoint()
+        const display = screen.getDisplayNearestPoint(cursorPoint)
+        console.log('[Screen Capture] Cursor at:', cursorPoint.x, cursorPoint.y)
+
+        // Capture the full screen first
         const sources = await desktopCapturer.getSources({
             types: ['screen'],
-            thumbnailSize: { width: 1920, height: 1080 }
+            thumbnailSize: { width: display.bounds.width, height: display.bounds.height }
         })
 
-        if (sources.length > 0) {
-            // Return the primary display screenshot as base64
-            const thumbnail = sources[0].thumbnail
-            return thumbnail.toDataURL()
+        if (sources.length === 0) {
+            console.error('[Screen Capture] No screen sources found')
+            return { image: null, cursorX: cursorPoint.x, cursorY: cursorPoint.y }
         }
-        return null
+
+        const thumbnail = sources[0].thumbnail
+        const fullSize = thumbnail.getSize()
+
+        if (fullSize.width === 0 || fullSize.height === 0) {
+            console.error('[Screen Capture] Thumbnail is empty')
+            return { image: null, cursorX: cursorPoint.x, cursorY: cursorPoint.y }
+        }
+
+        // Define capture region around cursor (400x200 box)
+        // Roblox name tags are typically above the character, so offset upward
+        const regionWidth = 400
+        const regionHeight = 200
+
+        // Calculate region bounds, ensuring we stay within screen
+        const relativeX = cursorPoint.x - display.bounds.x
+        const relativeY = cursorPoint.y - display.bounds.y
+
+        // Scale factor for retina displays
+        const scaleX = fullSize.width / display.bounds.width
+        const scaleY = fullSize.height / display.bounds.height
+
+        let cropX = Math.round((relativeX - regionWidth / 2) * scaleX)
+        let cropY = Math.round((relativeY - regionHeight / 2 - 50) * scaleY) // Offset up to catch name tag
+        let cropWidth = Math.round(regionWidth * scaleX)
+        let cropHeight = Math.round(regionHeight * scaleY)
+
+        // Clamp to image bounds
+        cropX = Math.max(0, Math.min(cropX, fullSize.width - cropWidth))
+        cropY = Math.max(0, Math.min(cropY, fullSize.height - cropHeight))
+        cropWidth = Math.min(cropWidth, fullSize.width - cropX)
+        cropHeight = Math.min(cropHeight, fullSize.height - cropY)
+
+        console.log('[Screen Capture] Cropping region:', cropX, cropY, cropWidth, cropHeight)
+
+        // Crop the thumbnail to the region around cursor
+        const croppedImage = thumbnail.crop({
+            x: cropX,
+            y: cropY,
+            width: cropWidth,
+            height: cropHeight
+        })
+
+        const dataUrl = croppedImage.toDataURL()
+        console.log('[Screen Capture] Cropped DataURL length:', dataUrl.length)
+
+        return {
+            image: dataUrl,
+            cursorX: cursorPoint.x,
+            cursorY: cursorPoint.y
+        }
     } catch (error) {
-        console.error('Screen capture error:', error)
-        return null
+        console.error('[Screen Capture] Error:', error)
+        return { image: null, cursorX: 0, cursorY: 0 }
     }
 })
 
@@ -135,18 +215,27 @@ ipcMain.handle('capture-screen', async () => {
 ipcMain.handle('get-settings', () => {
     return {
         hotkey: store.get('hotkey'),
+        toggleHotkey: store.get('toggleHotkey'),
         overlayOpacity: store.get('overlayOpacity')
     }
 })
 
-ipcMain.handle('set-settings', (_event, settings: { hotkey?: string; overlayOpacity?: number }) => {
+ipcMain.handle('set-settings', (_event, settings: { hotkey?: string; toggleHotkey?: string; overlayOpacity?: number }) => {
     if (settings.hotkey) {
         store.set('hotkey', settings.hotkey)
-        registerHotkey() // Re-register with new hotkey
+    }
+    if (settings.toggleHotkey) {
+        store.set('toggleHotkey', settings.toggleHotkey)
     }
     if (settings.overlayOpacity !== undefined) {
         store.set('overlayOpacity', settings.overlayOpacity)
+        // Apply opacity to the window
+        if (overlayWindow) {
+            overlayWindow.setOpacity(settings.overlayOpacity)
+        }
     }
+    // Re-register hotkeys with new values
+    registerHotkey()
     return true
 })
 
@@ -165,8 +254,77 @@ ipcMain.handle('clear-auth-token', () => {
     return true
 })
 
+// Move window to position near cursor (for positioning near detected username)
+ipcMain.on('move-window', (_event, x: number, y: number) => {
+    if (!overlayWindow) return
+
+    const display = screen.getDisplayNearestPoint({ x, y })
+    const windowBounds = overlayWindow.getBounds()
+
+    // Position to the right of cursor by default, flip to left if near edge
+    let newX = x + 20  // Offset to the right
+    if (newX + windowBounds.width > display.bounds.x + display.bounds.width) {
+        // Flip to left side if would go off right edge
+        newX = x - windowBounds.width - 20
+    }
+
+    // Keep vertical position centered on cursor, within screen bounds
+    let newY = y - windowBounds.height / 2
+    newY = Math.max(display.bounds.y, Math.min(newY, display.bounds.y + display.bounds.height - windowBounds.height))
+
+    overlayWindow.setPosition(Math.round(newX), Math.round(newY))
+})
+
+// Request screen capture permission (macOS only)
+async function requestScreenCapturePermission(): Promise<boolean> {
+    if (process.platform !== 'darwin') {
+        // Windows/Linux don't require special permission
+        return true
+    }
+
+    const { systemPreferences, dialog } = require('electron')
+    const status = systemPreferences.getMediaAccessStatus('screen')
+    console.log('[Permission] Screen recording status:', status)
+
+    if (status === 'granted') {
+        return true
+    }
+
+    // Show a dialog explaining we need permission
+    const result = await dialog.showMessageBox({
+        type: 'info',
+        title: 'Screen Recording Permission Required',
+        message: 'POW Vision needs screen recording permission to detect player names.',
+        detail: 'Click "Open Settings" to grant permission in System Preferences, then restart the app.',
+        buttons: ['Open Settings', 'Later'],
+        defaultId: 0,
+        cancelId: 1
+    })
+
+    if (result.response === 0) {
+        // Open System Preferences to the screen recording section
+        const { shell } = require('electron')
+        shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
+    }
+
+    // Try to trigger the permission prompt by attempting a capture
+    try {
+        await desktopCapturer.getSources({ types: ['screen'] })
+    } catch (e) {
+        console.log('[Permission] Capture attempt (for permission prompt):', e)
+    }
+
+    // Re-check status
+    const newStatus = systemPreferences.getMediaAccessStatus('screen')
+    return newStatus === 'granted'
+}
+
 // App lifecycle
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+    // Request screen recording permission on macOS
+    const hasPermission = await requestScreenCapturePermission()
+    console.log('[Permission] Screen recording permission granted:', hasPermission)
+
     createOverlayWindow()
     registerHotkey()
 

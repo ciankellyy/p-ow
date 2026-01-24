@@ -1,58 +1,108 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface SettingsProps {
     onBack: () => void
     onLogout: () => void
+    onHotkeyChange?: (scanHotkey: string, toggleHotkey: string) => void
 }
 
-export function Settings({ onBack, onLogout }: SettingsProps) {
+export function Settings({ onBack, onLogout, onHotkeyChange }: SettingsProps) {
     const [hotkey, setHotkey] = useState('Alt+V')
+    const [toggleHotkey, setToggleHotkey] = useState('Alt+Shift+V')
     const [opacity, setOpacity] = useState(95)
-    const [isRecording, setIsRecording] = useState(false)
-    const [saved, setSaved] = useState(false)
+    const [recordingFor, setRecordingFor] = useState<'scan' | 'toggle' | null>(null)
+    const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
     useEffect(() => {
         const loadSettings = async () => {
             const settings = await window.electronAPI.getSettings()
             setHotkey(settings.hotkey)
+            setToggleHotkey(settings.toggleHotkey)
             setOpacity(Math.round(settings.overlayOpacity * 100))
         }
         loadSettings()
     }, [])
 
-    const handleHotkeyRecord = () => {
-        setIsRecording(true)
+    // Auto-save when hotkey changes
+    const updateHotkey = async (newHotkey: string, type: 'scan' | 'toggle') => {
+        if (type === 'scan') {
+            setHotkey(newHotkey)
+            await window.electronAPI.setSettings({ hotkey: newHotkey })
+            onHotkeyChange?.(newHotkey, toggleHotkey)
+        } else {
+            setToggleHotkey(newHotkey)
+            await window.electronAPI.setSettings({ toggleHotkey: newHotkey })
+            onHotkeyChange?.(hotkey, newHotkey)
+        }
+    }
+
+    // Auto-save opacity with debounce
+    useEffect(() => {
+        if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current)
+        }
+        saveTimeoutRef.current = setTimeout(async () => {
+            await window.electronAPI.setSettings({ overlayOpacity: opacity / 100 })
+        }, 300)
+
+        return () => {
+            if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current)
+            }
+        }
+    }, [opacity])
+
+    const handleHotkeyRecord = (type: 'scan' | 'toggle') => {
+        setRecordingFor(type)
 
         const handleKeyDown = (e: KeyboardEvent) => {
             e.preventDefault()
+            e.stopPropagation()
+
             const parts: string[] = []
+
             if (e.ctrlKey) parts.push('Control')
             if (e.altKey) parts.push('Alt')
             if (e.shiftKey) parts.push('Shift')
             if (e.metaKey) parts.push('Meta')
 
-            const key = e.key
-            if (!['Control', 'Alt', 'Shift', 'Meta'].includes(key)) {
-                parts.push(key.toUpperCase())
+            const code = e.code
+            const modifiers = ['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight']
+
+            if (!modifiers.includes(code)) {
+                let keyName = code
+                if (code.startsWith('Key')) {
+                    keyName = code.replace('Key', '')
+                } else if (code.startsWith('Digit')) {
+                    keyName = code.replace('Digit', '')
+                } else if (code.startsWith('Numpad')) {
+                    keyName = 'Num' + code.replace('Numpad', '')
+                } else {
+                    const specialKeys: Record<string, string> = {
+                        'Space': 'Space',
+                        'Enter': 'Enter',
+                        'Escape': 'Escape',
+                        'Backspace': 'Backspace',
+                        'Tab': 'Tab',
+                        'ArrowUp': 'Up',
+                        'ArrowDown': 'Down',
+                        'ArrowLeft': 'Left',
+                        'ArrowRight': 'Right',
+                    }
+                    keyName = specialKeys[code] || code
+                }
+                parts.push(keyName)
             }
 
             if (parts.length > 0 && !['Control', 'Alt', 'Shift', 'Meta'].includes(parts[parts.length - 1])) {
-                setHotkey(parts.join('+'))
-                setIsRecording(false)
+                const newHotkey = parts.join('+')
+                updateHotkey(newHotkey, type)
+                setRecordingFor(null)
                 document.removeEventListener('keydown', handleKeyDown)
             }
         }
 
         document.addEventListener('keydown', handleKeyDown)
-    }
-
-    const handleSave = async () => {
-        await window.electronAPI.setSettings({
-            hotkey,
-            overlayOpacity: opacity / 100
-        })
-        setSaved(true)
-        setTimeout(() => setSaved(false), 2000)
     }
 
     return (
@@ -65,18 +115,31 @@ export function Settings({ onBack, onLogout }: SettingsProps) {
                 Back
             </button>
 
-            <div className="space-y-4 flex-1">
-                {/* Hotkey Setting */}
+            <div className="space-y-4 flex-1 overflow-y-auto">
+                {/* Scan Hotkey */}
                 <div>
                     <label className="block text-white/40 text-xs uppercase font-bold mb-2">Scan Hotkey</label>
                     <button
-                        onClick={handleHotkeyRecord}
-                        className={`w-full bg-pow-card border rounded-lg px-4 py-3 text-left transition-colors ${isRecording ? 'border-indigo-500 text-indigo-400' : 'border-pow-border text-white'
+                        onClick={() => handleHotkeyRecord('scan')}
+                        className={`w-full bg-pow-card border rounded-lg px-4 py-3 text-left transition-colors ${recordingFor === 'scan' ? 'border-indigo-500 text-indigo-400' : 'border-pow-border text-white'
                             }`}
                     >
-                        {isRecording ? 'Press key combination...' : hotkey}
+                        {recordingFor === 'scan' ? 'Press key combination...' : hotkey}
                     </button>
-                    <p className="text-white/30 text-xs mt-1">Click to change, then press your desired key combination</p>
+                    <p className="text-white/30 text-xs mt-1">Triggers OCR scan when pressed</p>
+                </div>
+
+                {/* Toggle Hotkey */}
+                <div>
+                    <label className="block text-white/40 text-xs uppercase font-bold mb-2">Toggle Hotkey</label>
+                    <button
+                        onClick={() => handleHotkeyRecord('toggle')}
+                        className={`w-full bg-pow-card border rounded-lg px-4 py-3 text-left transition-colors ${recordingFor === 'toggle' ? 'border-indigo-500 text-indigo-400' : 'border-pow-border text-white'
+                            }`}
+                    >
+                        {recordingFor === 'toggle' ? 'Press key combination...' : toggleHotkey}
+                    </button>
+                    <p className="text-white/30 text-xs mt-1">Shows/hides the overlay panel</p>
                 </div>
 
                 {/* Opacity Setting */}
@@ -91,15 +154,6 @@ export function Settings({ onBack, onLogout }: SettingsProps) {
                         className="w-full accent-indigo-500"
                     />
                 </div>
-
-                {/* Save Button */}
-                <button
-                    onClick={handleSave}
-                    className={`w-full py-3 rounded-lg font-medium transition-colors ${saved ? 'bg-emerald-500 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white'
-                        }`}
-                >
-                    {saved ? '✓ Saved!' : 'Save Settings'}
-                </button>
             </div>
 
             {/* Logout */}

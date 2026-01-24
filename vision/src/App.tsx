@@ -3,6 +3,7 @@ import { PlayerPanel } from './components/PlayerPanel'
 import { Settings } from './components/Settings'
 import { LoginScreen } from './components/LoginScreen'
 import { useOcr } from './hooks/useOcr'
+import logo from './assets/logo.png'
 
 type View = 'main' | 'settings'
 
@@ -23,16 +24,23 @@ function App() {
     const [isLoading, setIsLoading] = useState(true)
     const [player, setPlayer] = useState<PlayerData | null>(null)
     const [error, setError] = useState<string | null>(null)
+    const [scanHotkey, setScanHotkey] = useState('Alt+V')
+    const [toggleHotkey, setToggleHotkey] = useState('Alt+Shift+V')
     const { processCapture, isProcessing } = useOcr()
 
-    // Check auth on mount
+    // Check auth and load settings on mount
     useEffect(() => {
-        const checkAuth = async () => {
-            const token = await window.electronAPI.getAuthToken()
+        const init = async () => {
+            const [token, settings] = await Promise.all([
+                window.electronAPI.getAuthToken(),
+                window.electronAPI.getSettings()
+            ])
             setIsLoggedIn(!!token)
+            setScanHotkey(settings.hotkey)
+            setToggleHotkey(settings.toggleHotkey)
             setIsLoading(false)
         }
-        checkAuth()
+        init()
     }, [])
 
     // Listen for capture trigger from hotkey
@@ -40,15 +48,17 @@ function App() {
         const cleanup = window.electronAPI.onTriggerCapture(async () => {
             setError(null)
 
-            // Capture screen and run OCR
-            const screenshot = await window.electronAPI.captureScreen()
-            if (!screenshot) {
+            // Capture screen region around cursor
+            const captureResult = await window.electronAPI.captureScreen()
+            if (!captureResult.image) {
                 setError('Failed to capture screen')
                 return
             }
 
-            const detectedName = await processCapture(screenshot)
+            const detectedName = await processCapture(captureResult.image)
             if (detectedName) {
+                // Move panel near the cursor where username was detected
+                window.electronAPI.moveWindow(captureResult.cursorX, captureResult.cursorY)
                 await lookupPlayer(detectedName)
             } else {
                 setError('Could not detect player name')
@@ -58,7 +68,7 @@ function App() {
         return cleanup
     }, [processCapture])
 
-    // Lookup player via API
+    // Lookup player via POW API
     const lookupPlayer = async (username: string) => {
         try {
             const token = await window.electronAPI.getAuthToken()
@@ -67,22 +77,25 @@ function App() {
                 return
             }
 
-            // TODO: Replace with actual dashboard URL
-            const res = await fetch(`http://localhost:3000/api/roblox/user?username=${encodeURIComponent(username)}`, {
+            const res = await fetch(`https://pow.ciankelly.xyz/api/vision/player?username=${encodeURIComponent(username)}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
 
             if (res.ok) {
                 const data = await res.json()
                 setPlayer(data)
+                setError(null)
             } else if (res.status === 401) {
                 setIsLoggedIn(false)
                 await window.electronAPI.clearAuthToken()
-            } else {
+            } else if (res.status === 404) {
                 setError('Player not found')
+            } else {
+                setError('Failed to lookup player')
             }
         } catch (e) {
-            setError('Failed to lookup player')
+            console.error('Player lookup error:', e)
+            setError('Connection failed')
         }
     }
 
@@ -102,6 +115,11 @@ function App() {
         setIsLoggedIn(true)
     }
 
+    const handleHotkeyChange = (newScanHotkey: string, newToggleHotkey: string) => {
+        setScanHotkey(newScanHotkey)
+        setToggleHotkey(newToggleHotkey)
+    }
+
     if (isLoading) {
         return (
             <div className="w-full h-screen flex items-center justify-center bg-pow-bg/95 rounded-2xl">
@@ -119,9 +137,7 @@ function App() {
             {/* Header - Draggable */}
             <header className="drag-region flex items-center justify-between p-3 border-b border-pow-border bg-pow-card/50">
                 <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded bg-indigo-500 flex items-center justify-center text-white text-xs font-bold">
-                        P
-                    </div>
+                    <img src={logo} alt="POW" className="w-6 h-6 object-contain" />
                     <span className="text-white font-semibold text-sm">POW Vision</span>
                 </div>
                 <div className="no-drag flex items-center gap-1">
@@ -137,7 +153,11 @@ function App() {
             {/* Content */}
             <main className="flex-1 overflow-hidden">
                 {view === 'settings' ? (
-                    <Settings onBack={() => setView('main')} onLogout={handleLogout} />
+                    <Settings
+                        onBack={() => setView('main')}
+                        onLogout={handleLogout}
+                        onHotkeyChange={handleHotkeyChange}
+                    />
                 ) : (
                     <PlayerPanel
                         player={player}
@@ -145,13 +165,16 @@ function App() {
                         error={error}
                         onSearch={handleSearch}
                         onClear={() => setPlayer(null)}
+                        scanHotkey={scanHotkey}
                     />
                 )}
             </main>
 
             {/* Footer */}
             <footer className="p-2 border-t border-pow-border text-center">
-                <span className="text-white/30 text-xs">Press Alt+V to scan • Alt+Shift+V to toggle</span>
+                <span className="text-white/30 text-xs">
+                    Press <kbd className="bg-pow-card px-1 py-0.5 rounded text-white/50">{scanHotkey}</kbd> to scan • <kbd className="bg-pow-card px-1 py-0.5 rounded text-white/50">{toggleHotkey}</kbd> to toggle
+                </span>
             </footer>
         </div>
     )

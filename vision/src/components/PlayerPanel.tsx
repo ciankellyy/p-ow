@@ -17,9 +17,10 @@ interface PlayerPanelProps {
     error: string | null
     onSearch: (username: string) => void
     onClear: () => void
+    scanHotkey: string
 }
 
-export function PlayerPanel({ player, isProcessing, error, onSearch, onClear }: PlayerPanelProps) {
+export function PlayerPanel({ player, isProcessing, error, onSearch, onClear, scanHotkey }: PlayerPanelProps) {
     const [searchValue, setSearchValue] = useState('')
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -147,7 +148,7 @@ export function PlayerPanel({ player, isProcessing, error, onSearch, onClear }: 
                         <div className="w-12 h-12 rounded-full bg-pow-card border border-pow-border flex items-center justify-center mx-auto mb-3">
                             <ScanIcon />
                         </div>
-                        <p className="text-white/50 text-sm">Press <kbd className="bg-pow-card px-1.5 py-0.5 rounded text-white/70">Alt+V</kbd> to scan</p>
+                        <p className="text-white/50 text-sm">Press <kbd className="bg-pow-card px-1.5 py-0.5 rounded text-white/70">{scanHotkey}</kbd> to scan</p>
                         <p className="text-white/30 text-xs mt-1">or search manually above</p>
                     </div>
                 </div>

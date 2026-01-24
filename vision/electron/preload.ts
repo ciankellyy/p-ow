@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+interface CaptureResult {
+    image: string | null
+    cursorX: number
+    cursorY: number
+}
+
 // Expose protected methods to renderer
 contextBridge.exposeInMainWorld('electronAPI', {
     // Screen capture
@@ -7,7 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Settings
     getSettings: () => ipcRenderer.invoke('get-settings'),
-    setSettings: (settings: { hotkey?: string; overlayOpacity?: number }) =>
+    setSettings: (settings: { hotkey?: string; toggleHotkey?: string; overlayOpacity?: number }) =>
         ipcRenderer.invoke('set-settings', settings),
 
     // Auth
@@ -19,18 +25,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onTriggerCapture: (callback: () => void) => {
         ipcRenderer.on('trigger-capture', callback)
         return () => ipcRenderer.removeListener('trigger-capture', callback)
-    }
+    },
+
+    // Move window to position (for positioning near detected username)
+    moveWindow: (x: number, y: number) => ipcRenderer.send('move-window', x, y)
 })
 
 // Type definitions for renderer
 export interface ElectronAPI {
-    captureScreen: () => Promise<string | null>
-    getSettings: () => Promise<{ hotkey: string; overlayOpacity: number }>
-    setSettings: (settings: { hotkey?: string; overlayOpacity?: number }) => Promise<boolean>
+    captureScreen: () => Promise<CaptureResult>
+    getSettings: () => Promise<{ hotkey: string; toggleHotkey: string; overlayOpacity: number }>
+    setSettings: (settings: { hotkey?: string; toggleHotkey?: string; overlayOpacity?: number }) => Promise<boolean>
     storeAuthToken: (token: string) => Promise<boolean>
     getAuthToken: () => Promise<string | null>
     clearAuthToken: () => Promise<boolean>
     onTriggerCapture: (callback: () => void) => () => void
+    moveWindow: (x: number, y: number) => void
 }
 
 declare global {

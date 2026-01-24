@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import logo from '../assets/logo.png'
+
+const API_BASE = 'https://pow.ciankelly.xyz'
 
 interface LoginScreenProps {
     onLoginSuccess: () => void
@@ -6,57 +9,118 @@ interface LoginScreenProps {
 
 export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     const [isLoading, setIsLoading] = useState(false)
+    const [showTokenInput, setShowTokenInput] = useState(false)
+    const [tokenInput, setTokenInput] = useState('')
+    const [error, setError] = useState<string | null>(null)
 
-    const handleLogin = async () => {
+    const handleOpenBrowser = () => {
+        // Open browser to dashboard for login
+        // User will log in via Clerk, then be shown a token to copy
+        window.open(`${API_BASE}/vision-auth`, '_blank')
+        setShowTokenInput(true)
+    }
+
+    const handleSubmitToken = async () => {
+        if (!tokenInput.trim()) {
+            setError('Please enter your token')
+            return
+        }
+
         setIsLoading(true)
+        setError(null)
 
-        // TODO: Open browser to dashboard auth page
-        // For now, simulate OAuth flow
-        // In production: window.open('https://your-dashboard.com/vision-auth', '_blank')
+        try {
+            // Verify the token with the API
+            const res = await fetch(`${API_BASE}/api/vision/auth`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: tokenInput.trim() })
+            })
 
-        // This would be replaced with actual OAuth callback handling
-        // The dashboard would redirect to pow-vision://callback?token=xxx
-        // which the app registers as a custom protocol handler
-
-        // Temporary mock for development
-        setTimeout(async () => {
-            await window.electronAPI.storeAuthToken('mock-token-for-dev')
-            onLoginSuccess()
-        }, 1500)
+            if (res.ok) {
+                const data = await res.json()
+                if (data.valid) {
+                    await window.electronAPI.storeAuthToken(tokenInput.trim())
+                    onLoginSuccess()
+                } else {
+                    setError('Invalid token. Please try again.')
+                }
+            } else {
+                setError('Failed to verify token. Please try again.')
+            }
+        } catch (e) {
+            setError('Connection failed. Check your internet connection.')
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     return (
         <div className="w-full h-screen bg-pow-bg/95 rounded-2xl border border-pow-border overflow-hidden flex flex-col items-center justify-center p-8">
-            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mb-6">
-                <span className="text-white text-2xl font-bold">P</span>
-            </div>
+            <img src={logo} alt="POW" className="w-16 h-16 mb-6" />
 
             <h1 className="text-white text-xl font-bold mb-2">POW Vision</h1>
-            <p className="text-white/50 text-sm text-center mb-8">
+            <p className="text-white/50 text-sm text-center mb-6">
                 Connect your POW account to get started
             </p>
 
-            <button
-                onClick={handleLogin}
-                disabled={isLoading}
-                className="w-full max-w-xs bg-indigo-500 hover:bg-indigo-600 disabled:bg-indigo-500/50 text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-                {isLoading ? (
-                    <>
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Connecting...
-                    </>
-                ) : (
-                    <>
-                        <LockIcon />
-                        Login with POW
-                    </>
-                )}
-            </button>
+            {error && (
+                <div className="w-full max-w-xs bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4">
+                    <p className="text-red-400 text-sm text-center">{error}</p>
+                </div>
+            )}
 
-            <p className="text-white/30 text-xs mt-4 text-center">
-                You'll be redirected to sign in via the POW dashboard
-            </p>
+            {!showTokenInput ? (
+                <>
+                    <button
+                        onClick={handleOpenBrowser}
+                        className="w-full max-w-xs bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                        <LockIcon />
+                        Login with POW Dashboard
+                    </button>
+                    <p className="text-white/30 text-xs mt-4 text-center">
+                        You'll be redirected to sign in via the POW dashboard
+                    </p>
+                </>
+            ) : (
+                <>
+                    <p className="text-white/60 text-sm text-center mb-4">
+                        After logging in, copy the token and paste it below:
+                    </p>
+                    <input
+                        type="text"
+                        value={tokenInput}
+                        onChange={(e) => setTokenInput(e.target.value)}
+                        placeholder="Paste your token here..."
+                        className="w-full max-w-xs bg-pow-card border border-pow-border rounded-lg px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-indigo-500 text-sm mb-3"
+                    />
+                    <button
+                        onClick={handleSubmitToken}
+                        disabled={isLoading}
+                        className="w-full max-w-xs bg-indigo-500 hover:bg-indigo-600 disabled:bg-indigo-500/50 text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                        {isLoading ? (
+                            <>
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                Verifying...
+                            </>
+                        ) : (
+                            'Connect'
+                        )}
+                    </button>
+                    <button
+                        onClick={() => {
+                            setShowTokenInput(false)
+                            setTokenInput('')
+                            setError(null)
+                        }}
+                        className="text-white/40 hover:text-white/60 text-sm mt-3"
+                    >
+                        ← Back
+                    </button>
+                </>
+            )}
         </div>
     )
 }
