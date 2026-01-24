@@ -51,11 +51,21 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
 
         // Capture install prompt
         const handleBeforeInstallPrompt = (e: Event) => {
-            // Prevent default to suppress browser mini-infobar (mobile) or icon auto-show (desktop)
-            // We want to control the UI
-            e.preventDefault()
-            setDeferredPrompt(e)
-            console.log("[PWA] Install prompt captured")
+            // Check mobile again here to be safe inside the closure if needed, 
+            // though the effect dependency is empty so we rely on the initial check.
+            // Better to re-check UA or use the state if possible, but state inside listener might be stale.
+            // Let's use a fresh UA check to be safe.
+            const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+
+            if (isMobileUA) {
+                // Prevent default to suppress browser mini-infobar on mobile so we can show our Gate
+                e.preventDefault()
+                setDeferredPrompt(e)
+            } else {
+                // On desktop, let the browser show its native install UI (omnibox icon)
+                // We still capture the event if we wanted to trigger it manually, but we won't preventDefault
+                setDeferredPrompt(e) 
+            }
         }
 
         window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
@@ -67,22 +77,19 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
 
     const install = async () => {
         if (!deferredPrompt) {
-            console.error("[PWA] Install failed: No deferred prompt available")
             return
         }
 
         try {
-            console.log("[PWA] Triggering install prompt...")
             await deferredPrompt.prompt()
             
             const { outcome } = await deferredPrompt.userChoice
-            console.log(`[PWA] Install prompt outcome: ${outcome}`)
 
             if (outcome === "accepted") {
                 setDeferredPrompt(null)
             }
         } catch (error) {
-            console.error("[PWA] Install error:", error)
+            // Silently fail
         }
     }
 
