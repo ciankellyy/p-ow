@@ -158,3 +158,5 @@ standalone-backup.js
 Archive.zip
 Archive.zip
 *.zip
+Archive.zip
+.DS_Store
