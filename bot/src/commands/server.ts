@@ -19,7 +19,7 @@ export async function handleServerCommand(interaction: ChatInputCommandInteracti
         try {
             // Fetch server info from PRC API
             const serverRes = await fetch(`${DASHBOARD_URL}/api/internal/server-status?serverId=${serverId}`, {
-                headers: { "x-internal-secret": process.env.INTERNAL_SYNC_SECRET || "REMOVED_INTERNAL_SECRET" }
+                headers: { "x-internal-secret": process.env.INTERNAL_SYNC_SECRET! }
             })
 
             let serverInfo = { players: 0, maxPlayers: 0, online: false }

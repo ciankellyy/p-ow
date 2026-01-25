@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db"
 import { verifyVisionSignature, visionCorsHeaders } from "@/lib/vision-auth"
 
 const VISION_SECRET = new TextEncoder().encode(
-    process.env.VISION_JWT_SECRET || "REMOVED_VISION_JWT_SECRET"
+    process.env.VISION_JWT_SECRET!
 )
 
 // Handle preflight requests

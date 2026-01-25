@@ -1,7 +1,7 @@
 import crypto from "crypto"
 
 // Shared secret for HMAC verification - set in production
-const VISION_HMAC_SECRET = process.env.VISION_HMAC_SECRET || "REMOVED_VISION_HMAC_SECRET"
+const VISION_HMAC_SECRET = process.env.VISION_HMAC_SECRET!
 
 /**
  * Verifies the HMAC signature from Vision app headers.

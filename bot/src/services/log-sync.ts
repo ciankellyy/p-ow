@@ -2,7 +2,7 @@ import { Client } from "discord.js"
 
 const SYNC_INTERVAL_MS = 10000 // 10 seconds (Matches DB-backed Mod Panel sync)
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://localhost:3000"
-const INTERNAL_SECRET = process.env.INTERNAL_SYNC_SECRET || "REMOVED_INTERNAL_SECRET"
+const INTERNAL_SECRET = process.env.INTERNAL_SYNC_SECRET!
 
 export function startLogSyncService(client: Client) {
     console.log(`Starting log sync service (${SYNC_INTERVAL_MS}ms interval)`)

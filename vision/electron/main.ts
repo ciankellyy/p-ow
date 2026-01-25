@@ -289,7 +289,7 @@ ipcMain.handle('clear-auth-token', () => {
 })
 
 // Shared secret for HMAC verification
-const VISION_HMAC_SECRET = "REMOVED_VISION_HMAC_SECRET"
+const VISION_HMAC_SECRET = process.env.VISION_HMAC_SECRET!
 // Generate a random instance ID for this session
 const SESSION_INSTANCE_ID = crypto.randomBytes(8).toString('hex')
 

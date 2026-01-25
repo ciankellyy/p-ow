@@ -1,6 +1,6 @@
 
 const BASE_URL = "https://api.policeroleplay.community/v1"
-const DEFAULT_WEBHOOK_URL = "REMOVED_DISCORD_WEBHOOK"
+const DEFAULT_WEBHOOK_URL = process.env.DISCORD_PUNISHMENT_WEBHOOK || ""
 
 export interface PrcServer {
     Name: string

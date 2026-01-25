@@ -3,11 +3,11 @@ import { jwtVerify } from "jose"
 import { verifyVisionSignature, visionCorsHeaders } from "@/lib/vision-auth"
 
 const VISION_SECRET = new TextEncoder().encode(
-    process.env.VISION_JWT_SECRET || "REMOVED_VISION_JWT_SECRET"
+    process.env.VISION_JWT_SECRET!
 )
 
 // Mistral API Key
-const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY || "REMOVED_MISTRAL_KEY"
+const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY!
 
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: visionCorsHeaders })

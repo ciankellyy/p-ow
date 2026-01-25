@@ -4,7 +4,7 @@ import { processCommandQueue } from "@/lib/cross-server-sync"
 import { NextResponse } from "next/server"
 
 // Simple secret to prevent public access - in prod use a proper ENV variable
-const INTERNAL_SECRET = process.env.INTERNAL_SYNC_SECRET || "REMOVED_INTERNAL_SECRET"
+const INTERNAL_SECRET = process.env.INTERNAL_SYNC_SECRET!
 
 export async function POST(req: Request) {
     const authHeader = req.headers.get("x-internal-secret")

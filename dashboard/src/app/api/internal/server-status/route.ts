@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db"
 import { PrcClient } from "@/lib/prc"
 import { NextResponse } from "next/server"
 
-const INTERNAL_SECRET = process.env.INTERNAL_SYNC_SECRET || "REMOVED_INTERNAL_SECRET"
+const INTERNAL_SECRET = process.env.INTERNAL_SYNC_SECRET!
 
 export async function GET(req: Request) {
     const authHeader = req.headers.get("x-internal-secret")

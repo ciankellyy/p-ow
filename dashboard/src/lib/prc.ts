@@ -1,7 +1,7 @@
 import { PrcServer, PrcPlayer, PrcJoinLog, PrcKillLog, PrcCommandLog } from "./prc-types"
 
 const BASE_URL = "https://api.policeroleplay.community/v1"
-const DEFAULT_WEBHOOK_URL = "REMOVED_DISCORD_WEBHOOK"
+const DEFAULT_WEBHOOK_URL = process.env.DISCORD_PUNISHMENT_WEBHOOK
 
 // Rate limit state per server key
 interface RateLimitState {

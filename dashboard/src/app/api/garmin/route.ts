@@ -3,8 +3,8 @@ import { getSession } from "@/lib/auth-clerk"
 import { prisma } from "@/lib/db"
 import { NextResponse } from "next/server"
 
-const GARMIN_API_URL = "https://garminapi.ciankelly.xyz"
-const GARMIN_API_KEY = "REMOVED_GARMIN_KEY"
+const GARMIN_API_URL = process.env.GARMIN_API_URL || "https://garminapi.ciankelly.xyz"
+const GARMIN_API_KEY = process.env.GARMIN_API_KEY!
 
 interface GarminResponse {
     success: boolean

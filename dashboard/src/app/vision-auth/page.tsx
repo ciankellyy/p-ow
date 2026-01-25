@@ -6,7 +6,7 @@ import { CopyButton } from "./copy-button"
 export const dynamic = 'force-dynamic'
 
 const VISION_SECRET = new TextEncoder().encode(
-    process.env.VISION_JWT_SECRET || "REMOVED_VISION_JWT_SECRET"
+    process.env.VISION_JWT_SECRET!
 )
 
 // Import the handshake codes map from the shared store

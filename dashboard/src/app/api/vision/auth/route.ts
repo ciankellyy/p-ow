@@ -5,7 +5,7 @@ import { verifyVisionSignature, visionCorsHeaders } from "@/lib/vision-auth"
 
 // Secret for Vision tokens - should be in env vars in production
 const VISION_SECRET = new TextEncoder().encode(
-    process.env.VISION_JWT_SECRET || "REMOVED_VISION_JWT_SECRET"
+    process.env.VISION_JWT_SECRET!
 )
 
 // Handle preflight requests
