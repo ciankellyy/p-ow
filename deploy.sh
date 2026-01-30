@@ -65,6 +65,17 @@ if [ ! -f "ecosystem.config.js" ]; then
     exit 1
 fi
 
+# PRE-FLIGHT CHECK: Verify Clerk keys exist in shared .env (if it exists)
+if [ -f "${SHARED_DIR}/.env" ]; then
+    echo -e "${YELLOW}[PRE-FLIGHT] Checking existing environment configuration...${NC}"
+    if ! grep -q "CLERK_SECRET_KEY=" "${SHARED_DIR}/.env"; then
+        echo -e "${RED}[WARNING] CLERK_SECRET_KEY not found in ${SHARED_DIR}/.env${NC}"
+    fi
+    if ! grep -q "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=" "${SHARED_DIR}/.env"; then
+        echo -e "${RED}[WARNING] NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY not found in ${SHARED_DIR}/.env${NC}"
+    fi
+fi
+
 # Install PM2 if missing
 if ! command -v pm2 &> /dev/null; then
     echo -e "${YELLOW}PM2 not found. Installing globally...${NC}"
@@ -226,14 +237,29 @@ else
         echo "DISCORD_PUNISHMENT_WEBHOOK=\"$VAL\"" >> "${SHARED_ENV_FILE}"
     fi
     
-    # Clerk Auth
+    # Clerk Auth - CRITICAL: Always verify these are present
+    CLERK_SECRET_MISSING=false
+    CLERK_PUBLISHABLE_MISSING=false
+
     if ! grep -q "CLERK_SECRET_KEY=" "${SHARED_ENV_FILE}"; then
-        read -p "Missing Clerk Secret Key: " VAL
-        echo "CLERK_SECRET_KEY=\"$VAL\"" >> "${SHARED_ENV_FILE}"
+        CLERK_SECRET_MISSING=true
     fi
     if ! grep -q "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=" "${SHARED_ENV_FILE}"; then
-        read -p "Missing Clerk Publishable Key: " VAL
-        echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=\"$VAL\"" >> "${SHARED_ENV_FILE}"
+        CLERK_PUBLISHABLE_MISSING=true
+    fi
+
+    if [ "$CLERK_SECRET_MISSING" = true ] || [ "$CLERK_PUBLISHABLE_MISSING" = true ]; then
+        echo -e "${RED}[CRITICAL] Clerk authentication keys are missing!${NC}"
+        echo "Without these, the API routes will return 404 errors."
+        echo ""
+        if [ "$CLERK_SECRET_MISSING" = true ]; then
+            read -p "Clerk Secret Key (CLERK_SECRET_KEY): " VAL
+            echo "CLERK_SECRET_KEY=\"$VAL\"" >> "${SHARED_ENV_FILE}"
+        fi
+        if [ "$CLERK_PUBLISHABLE_MISSING" = true ]; then
+            read -p "Clerk Publishable Key (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY): " VAL
+            echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=\"$VAL\"" >> "${SHARED_ENV_FILE}"
+        fi
     fi
     
     # External API Keys
@@ -277,6 +303,30 @@ else
     echo -e "${GREEN}All required environment variables verified.${NC}"
 fi
 
+# FINAL VALIDATION: Absolutely ensure Clerk keys exist before proceeding
+echo ""
+echo -e "${YELLOW}[FINAL CHECK] Verifying critical Clerk authentication keys...${NC}"
+if ! grep -q "CLERK_SECRET_KEY=" "${SHARED_ENV_FILE}"; then
+    echo -e "${RED}[CRITICAL] CLERK_SECRET_KEY is MISSING from .env file!${NC}"
+    echo "This must be configured for the API to work correctly."
+    read -p "Enter your Clerk Secret Key (CLERK_SECRET_KEY): " CLERK_SK
+    sed -i "/^CLERK_SECRET_KEY=/d" "${SHARED_ENV_FILE}" 2>/dev/null || true
+    echo "CLERK_SECRET_KEY=\"${CLERK_SK}\"" >> "${SHARED_ENV_FILE}"
+    echo -e "${GREEN}Added CLERK_SECRET_KEY${NC}"
+fi
+
+if ! grep -q "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=" "${SHARED_ENV_FILE}"; then
+    echo -e "${RED}[CRITICAL] NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is MISSING from .env file!${NC}"
+    echo "This must be configured for the API to work correctly."
+    read -p "Enter your Clerk Publishable Key (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY): " CLERK_PK
+    sed -i "/^NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=/d" "${SHARED_ENV_FILE}" 2>/dev/null || true
+    echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=\"${CLERK_PK}\"" >> "${SHARED_ENV_FILE}"
+    echo -e "${GREEN}Added NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY${NC}"
+fi
+
+echo -e "${GREEN}[OK] Clerk keys verified and present in configuration.${NC}"
+echo ""
+
 # Verify DATABASE_URL points to the correct file
 echo "Verifying DATABASE_URL in .env..."
 if grep -q "DATABASE_URL=\"file:/root/data/pow.db\"" "${SHARED_ENV_FILE}"; then
@@ -295,6 +345,37 @@ cp "${SHARED_ENV_FILE}" "${NEW_RELEASE_DIR}/dashboard/.env"
 cp "${SHARED_ENV_FILE}" "${NEW_RELEASE_DIR}/dashboard/.env.local"
 cp "${SHARED_ENV_FILE}" "${NEW_RELEASE_DIR}/bot/.env"
 echo -e "${GREEN}Copied .env to: root, dashboard, dashboard/.env.local, and bot${NC}"
+
+# CRITICAL VALIDATION: Verify Clerk keys are in the deployed .env files
+echo ""
+echo -e "${YELLOW}[VALIDATION] Verifying Clerk authentication keys in deployed files...${NC}"
+CLERK_ISSUES=false
+
+for ENV_LOCATION in "${NEW_RELEASE_DIR}/.env" "${NEW_RELEASE_DIR}/dashboard/.env" "${NEW_RELEASE_DIR}/dashboard/.env.local" "${NEW_RELEASE_DIR}/bot/.env"; do
+    if [ -f "$ENV_LOCATION" ]; then
+        if ! grep -q "CLERK_SECRET_KEY=" "$ENV_LOCATION"; then
+            echo -e "${RED}[ERROR] CLERK_SECRET_KEY missing in $ENV_LOCATION${NC}"
+            CLERK_ISSUES=true
+        fi
+        if ! grep -q "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=" "$ENV_LOCATION"; then
+            echo -e "${RED}[ERROR] NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY missing in $ENV_LOCATION${NC}"
+            CLERK_ISSUES=true
+        fi
+    else
+        echo -e "${RED}[ERROR] .env file not found at $ENV_LOCATION${NC}"
+        CLERK_ISSUES=true
+    fi
+done
+
+if [ "$CLERK_ISSUES" = true ]; then
+    echo ""
+    echo -e "${RED}[CRITICAL] Clerk keys are missing or incomplete!${NC}"
+    echo "Without these keys, API routes will return 404 errors."
+    echo "Please update /shared/.env with the correct Clerk keys and run deploy.sh again."
+    exit 1
+fi
+
+echo -e "${GREEN}[OK] All Clerk keys verified in deployed files.${NC}"
 
 # --- 4. Install Dependencies ---
 echo -e "${YELLOW}[4/8] Installing dependencies (this may take a moment)...${NC}"
