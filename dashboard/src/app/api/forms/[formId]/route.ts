@@ -11,6 +11,9 @@ async function canEditForm(userId: string, formId: string): Promise<boolean> {
     })
     if (!form) return false
 
+    // Check if user is creator
+    if (form.createdBy === userId) return true
+
     // Check if user is server admin
     const isAdmin = await isServerAdmin({ id: userId } as any, form.serverId)
     if (isAdmin) return true

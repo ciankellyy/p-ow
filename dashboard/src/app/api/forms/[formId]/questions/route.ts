@@ -7,9 +7,13 @@ import { isServerAdmin } from "@/lib/admin"
 async function canEditForm(userId: string, formId: string): Promise<boolean> {
     const form = await prisma.form.findUnique({
         where: { id: formId },
-        select: { serverId: true }
+        select: { serverId: true, createdBy: true }
     })
     if (!form) return false
+
+    // Check if user is creator
+    // @ts-ignore - createdBy is selected implicitly or we need to select it
+    if (form.createdBy === userId) return true
 
     const isAdmin = await isServerAdmin({ id: userId } as any, form.serverId)
     if (isAdmin) return true
