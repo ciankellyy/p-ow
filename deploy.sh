@@ -414,10 +414,9 @@ else
     # NEVER use --accept-data-loss on existing database!
     # Just run migrate deploy to apply any new migrations
     cd "${PROJECT_ROOT}/${NEW_RELEASE_DIR}/dashboard"
-    echo "Applying migrations (if any)..."
-    npx prisma migrate deploy 2>&1 || {
-        echo -e "${YELLOW}No migrations to apply or migration failed - this is usually OK${NC}"
-    }
+    echo "Applying migrations..."
+    # STRICT MODE: Fail if migration fails. Do NOT swallow errors.
+    npx prisma migrate deploy
     echo -e "${GREEN}Database setup complete.${NC}"
 fi
 

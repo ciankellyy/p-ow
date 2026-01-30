@@ -1,11 +1,19 @@
+```typescript
 import { PostHog } from 'posthog-node'
 
+let posthogClient: PostHog | null = null
+
 export default function PostHogClient() {
-    const posthogClient = new PostHog(
-        process.env.NEXT_PUBLIC_POSTHOG_KEY!,
-        {
-            host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-        }
+  if (!posthogClient) {
+    posthogClient = new PostHog(
+      process.env.NEXT_PUBLIC_POSTHOG_KEY!,
+      {
+        host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+        flushAt: 1, // Flush immediately for serverless/nextjs
+        flushInterval: 0
+      }
     )
-    return posthogClient
+  }
+  return posthogClient
 }
+```

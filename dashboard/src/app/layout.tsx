@@ -1,5 +1,6 @@
 import { ClerkProvider } from '@clerk/nextjs'
 import { Montserrat } from "next/font/google";
+import { Metadata, Viewport } from "next";
 import "./globals.css";
 import { PostHogProvider } from "@/components/providers/posthog-provider";
 import { CookieConsentProvider } from "@/components/providers/cookie-consent-context";
@@ -10,11 +11,10 @@ import { PWARegister } from "@/components/pwa/PWARegister";
 import { PWAProvider } from "@/components/providers/pwa-provider";
 
 const montserrat = Montserrat({ subsets: ["latin"] });
-export const metadata = {
+export const metadata: Metadata = {
   title: "Project Overwatch",
   description: "ERLC Multi-Server Dashboard",
   manifest: "/manifest.json",
-  themeColor: "#111111",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -23,13 +23,15 @@ export const metadata = {
   formatDetection: {
     telephone: false,
   },
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-    viewportFit: "cover",
-  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#111111",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -43,7 +45,6 @@ export default function RootLayout({
         <head>
           {/* PWA Meta Tags */}
           <link rel="manifest" href="/manifest.json" />
-          <meta name="theme-color" content="#111111" />
           <meta name="mobile-web-app-capable" content="yes" />
 
           {/* iOS PWA Meta Tags */}
@@ -51,20 +52,17 @@ export default function RootLayout({
           <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
           <meta name="apple-mobile-web-app-title" content="POW" />
           <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-
-          {/* Prevent zoom on mobile */}
-          <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
         </head>
         <body className={montserrat.className}>
           <MaintenanceGate>
             <CookieConsentProvider>
               <PostHogProvider>
                 <PWAProvider>
-                    <PWARegister />
-                    <PWAGate>
-                      {children}
-                    </PWAGate>
-                    <CookieConsentBanner />
+                  <PWARegister />
+                  <PWAGate>
+                    {children}
+                  </PWAGate>
+                  <CookieConsentBanner />
                 </PWAProvider>
               </PostHogProvider>
             </CookieConsentProvider>
