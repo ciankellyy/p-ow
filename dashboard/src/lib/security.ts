@@ -19,7 +19,12 @@ const ipCounters = globalForSecurity.ipCounters ??= new Map<string, { count: num
  */
 export async function checkSecurity(req: Request): Promise<NextResponse | null> {
     const ip = req.headers.get("x-forwarded-for") || "unknown"
-    if (ip === "unknown") return null // Can't track if no IP
+    console.log(`[SECURITY] Checking request from IP: ${ip}`)
+
+    if (ip === "unknown") {
+        console.log(`[SECURITY] No IP detected, skipping security check`)
+        return null // Can't track if no IP
+    }
 
     // 1. Check if IP is already banned in database
     const banned = await prisma.bannedIp.findUnique({
@@ -27,7 +32,7 @@ export async function checkSecurity(req: Request): Promise<NextResponse | null> 
     })
 
     if (banned) {
-        console.warn(`[SECURITY] Blocked request from banned IP: ${ip}`)
+        console.warn(`[SECURITY] Blocked request from banned IP: ${ip} (reason: ${banned.reason})`)
         return new NextResponse("Forbidden: Access denied.", { status: 403 })
     }
 
@@ -38,9 +43,11 @@ export async function checkSecurity(req: Request): Promise<NextResponse | null> 
     if (!tracker || tracker.resetAt < now) {
         // First request or counter expired
         ipCounters.set(ip, { count: 1, resetAt: now + 60000 })
+        console.log(`[SECURITY] New/reset counter for IP ${ip}`)
     } else {
         // Increment counter
         tracker.count++
+        console.log(`[SECURITY] IP ${ip} request count: ${tracker.count}/${MAX_REQUESTS_PER_MINUTE}`)
 
         if (tracker.count > MAX_REQUESTS_PER_MINUTE) {
             // AUTO-BAN logic
@@ -62,6 +69,7 @@ export async function checkSecurity(req: Request): Promise<NextResponse | null> 
                         details: `Rate limit hit: ${tracker.count} req/min`
                     }
                 })
+                console.log(`[SECURITY] IP ${ip} banned and saved to database`)
             } catch (e) {
                 console.error("[SECURITY] Failed to save ban to DB:", e)
             }
@@ -70,6 +78,7 @@ export async function checkSecurity(req: Request): Promise<NextResponse | null> 
         }
     }
 
+    console.log(`[SECURITY] IP ${ip} passed all checks`)
     return null
 }
 
