@@ -25,6 +25,10 @@ async function fetchLegacyUserDetails(userId: number) {
         throw new Error("RATE_LIMITED")
     }
 
+    if (!detailsRes.ok) {
+        throw new Error(`Roblox API error: ${detailsRes.status}`)
+    }
+
     return await detailsRes.json()
 }
 
