@@ -128,8 +128,8 @@ export async function getRobloxUser(username: string): Promise<RobloxUser | null
                 const ocData = await ocRes.json()
                 userDetails = {
                     id: userId,
-                    name: ocData.name || searchData.data[0].name,
-                    displayName: ocData.displayName || searchData.data[0].displayName,
+                    name: ocData.name || userResult.name,
+                    displayName: ocData.displayName || userResult.displayName,
                     description: ocData.about || "",
                     created: ocData.createTime,
                     isBanned: false,
