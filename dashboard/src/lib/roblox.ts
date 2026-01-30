@@ -16,10 +16,11 @@ export interface RobloxUser {
 
 async function fetchLegacyUserDetails(userId: number) {
     console.log(`[Roblox] Fetching user details for ID ${userId}`)
-    const detailsRes = await fetch(`https://users.roblox.com/v1/users/${userId}`, {
-        headers: { "User-Agent": "ProjectOverwatch/1.0" },
-        next: { revalidate: 3600 } // 1 hour Next.js cache
-    } as any)
+    const detailsUrl = `https://users.roblox.com/v1/users/${userId}`
+    console.log(`[Roblox] Details URL: ${detailsUrl}`)
+    const detailsRes = await fetch(detailsUrl, {
+        headers: { "User-Agent": "ProjectOverwatch/1.0" }
+    })
 
     // Handle rate limit
     if (detailsRes.status === 429) {
@@ -54,14 +55,16 @@ export async function getRobloxUser(username: string): Promise<RobloxUser | null
 
     try {
         // 2. Search for User ID
+        const searchUrl = `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username)}&limit=10`
         console.log(`[Roblox] Searching for user: ${username}`)
+        console.log(`[Roblox] Search URL: ${searchUrl}`)
         const searchRes = await fetch(
-            `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username)}&limit=1`,
+            searchUrl,
             {
-                headers: { "User-Agent": "ProjectOverwatch/1.0" },
-                next: { revalidate: 3600 }
-            } as any
+                headers: { "User-Agent": "ProjectOverwatch/1.0" }
+            }
         )
+        console.log(`[Roblox] Search response status: ${searchRes.status}`)
 
         // Handle rate limit - return stale cache if available
         if (searchRes.status === 429) {
@@ -75,7 +78,13 @@ export async function getRobloxUser(username: string): Promise<RobloxUser | null
         }
 
         if (!searchRes.ok) {
-            console.error(`[Roblox] Search failed for ${username}: ${searchRes.status} ${searchRes.statusText}`)
+            try {
+                const errorBody = await searchRes.text()
+                console.error(`[Roblox] Search failed for ${username}: ${searchRes.status} ${searchRes.statusText}`)
+                console.error(`[Roblox] Error response body:`, errorBody)
+            } catch (e) {
+                console.error(`[Roblox] Search failed for ${username}: ${searchRes.status} ${searchRes.statusText}`)
+            }
             const stale = getFromCacheStale<RobloxUser>(cacheKey)
             if (stale) {
                 console.log(`[Roblox] Returning stale cache for ${username} (search failed)`)
