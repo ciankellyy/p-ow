@@ -59,9 +59,10 @@ export default function PublicFormPage({
         loadForm()
     }, [shareId])
 
-    // Autosave Effect
+    // Autosave Effect - only for authenticated users (anonymous users would create duplicate drafts)
     useEffect(() => {
-        if (!form || submitted || submitting || Object.keys(answers).length === 0) return
+        // Skip autosave for anonymous users since we can't track their drafts
+        if (!isSignedIn || !form || submitted || submitting || Object.keys(answers).length === 0) return
 
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
 
@@ -86,7 +87,7 @@ export default function PublicFormPage({
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
         }
-    }, [answers, form, submitted, submitting])
+    }, [answers, form, submitted, submitting, isSignedIn])
 
     const loadForm = async () => {
         try {

@@ -64,7 +64,7 @@ export async function GET(
         }
 
         const responses = await prisma.formResponse.findMany({
-            where: { formId },
+            where: { formId, status: "completed" }, // Only show completed submissions, not drafts
             include: {
                 answers: {
                     include: { question: true }
@@ -75,7 +75,7 @@ export async function GET(
             take: limit
         })
 
-        const total = await prisma.formResponse.count({ where: { formId } })
+        const total = await prisma.formResponse.count({ where: { formId, status: "completed" } })
 
         // Collect respondent IDs
         const respondentIds = responses

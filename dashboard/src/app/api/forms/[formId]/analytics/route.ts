@@ -66,9 +66,12 @@ export async function GET(
         for (const question of allQuestions) {
             const config = JSON.parse(question.config || "{}")
 
-            // Get all answers for this question
+            // Get all answers for this question (only from completed responses)
             const answers = await prisma.formAnswer.findMany({
-                where: { questionId: question.id },
+                where: {
+                    questionId: question.id,
+                    response: { status: "completed" }
+                },
                 select: { value: true }
             })
 
@@ -203,9 +206,9 @@ export async function GET(
             analytics[question.id].questionType = question.type
         }
 
-        // Response timeline (submissions over time)
+        // Get timeline data (only completed responses)
         const responses = await prisma.formResponse.findMany({
-            where: { formId },
+            where: { formId, status: "completed" },
             select: { submittedAt: true },
             orderBy: { submittedAt: "asc" }
         })
@@ -216,10 +219,13 @@ export async function GET(
             timeline[date] = (timeline[date] || 0) + 1
         }
 
+        // Count only completed responses
+        const totalCompleted = await prisma.formResponse.count({ where: { formId, status: "completed" } })
+
         return NextResponse.json({
             formId: form.id,
             formTitle: form.title,
-            totalResponses: form._count.responses,
+            totalResponses: totalCompleted,
             questionAnalytics: analytics,
             responseTimeline: Object.entries(timeline).map(([date, count]) => ({ date, count }))
         })
