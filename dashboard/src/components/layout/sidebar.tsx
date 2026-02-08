@@ -3,9 +3,9 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, ScrollText, AlertTriangle, Clock, Settings, LogOut, Mail } from "lucide-react"
+import { LayoutDashboard, ScrollText, AlertTriangle, Clock, Settings, LogOut, Mail, CreditCard, ShieldAlert } from "lucide-react"
 import clsx from "clsx"
-import { SignOutButton } from "@clerk/nextjs"
+import { SignOutButton, useUser } from "@clerk/nextjs"
 
 const navigation = [
     { name: "Overview", href: "", icon: LayoutDashboard },
@@ -18,6 +18,7 @@ const navigation = [
 
 export function Sidebar({ serverId }: { serverId: string }) {
     const pathname = usePathname()
+    const { user } = useUser()
 
     return (
         <div className="flex h-full w-64 flex-col border-r border-white/5 bg-zinc-950">
@@ -46,6 +47,36 @@ export function Sidebar({ serverId }: { serverId: string }) {
                         </Link>
                     )
                 })}
+
+                {/* Subscriptions Link */}
+                <Link
+                    href={`/dashboard/subscription`}
+                    className={clsx(
+                        "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                        pathname === "/dashboard/subscription"
+                            ? "bg-indigo-500/10 text-indigo-400"
+                            : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                    )}
+                >
+                    <CreditCard className={clsx("h-5 w-5", pathname === "/dashboard/subscription" ? "text-indigo-400" : "text-zinc-500 group-hover:text-white")} />
+                    Subscription
+                </Link>
+
+                {/* Superadmin Link */}
+                {user?.id === 'user_36ogKIU3qHTwhGT3mrVtvUrTgbW' && (
+                    <Link
+                        href={`/admin/subscriptions`}
+                        className={clsx(
+                            "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                            pathname.startsWith("/admin")
+                                ? "bg-indigo-500/10 text-indigo-400"
+                                : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                        )}
+                    >
+                        <ShieldAlert className={clsx("h-5 w-5", pathname.startsWith("/admin") ? "text-indigo-400" : "text-zinc-500 group-hover:text-white")} />
+                        Superadmin
+                    </Link>
+                )}
             </div>
 
             <div className="border-t border-white/5 p-4">

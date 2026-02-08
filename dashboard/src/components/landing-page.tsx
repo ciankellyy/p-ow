@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 import { ChevronRight, Shield, Zap, Users, Clock, FileText, ArrowRight, Bot } from "lucide-react"
 import { useUser } from "@clerk/nextjs"
 
-export function LandingPage() {
+export function LandingPage({ showPricing = false }: { showPricing?: boolean }) {
     const [scrollY, setScrollY] = useState(0)
     const { isSignedIn, isLoaded } = useUser()
 
@@ -35,6 +35,9 @@ export function LandingPage() {
                         </div>
                         <div className="hidden md:flex items-center gap-8">
                             <button onClick={() => scrollTo("features")} className="text-sm font-medium text-zinc-600 hover:text-zinc-900 transition-colors">Features</button>
+                            {showPricing && (
+                                <Link href="/pricing" className="text-sm font-medium text-zinc-600 hover:text-zinc-900 transition-colors">Pricing</Link>
+                            )}
                             <button onClick={() => scrollTo("about")} className="text-sm font-medium text-zinc-600 hover:text-zinc-900 transition-colors">About</button>
                             {isLoaded && (
                                 isSignedIn ? (
