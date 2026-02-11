@@ -129,6 +129,8 @@ if [ ! -f "${SHARED_ENV_FILE}" ]; then
     read -p "Mistral API Key: " MISTRAL_API_KEY
     read -p "Garmin API Key: " GARMIN_API_KEY
     read -p "PostHog Project API Key: " POSTHOG_KEY
+    read -p "PostHog Personal API Key (for status dashboard, from PostHog > Settings > Personal API Keys): " POSTHOG_PERSONAL_KEY
+    read -p "PostHog Project ID (number from PostHog URL, e.g. 12345): " POSTHOG_PROJECT_ID
     
     NEXTAUTH_SECRET=$(openssl rand -base64 32)
     INTERNAL_SECRET=$(openssl rand -base64 32)
@@ -178,6 +180,8 @@ GARMIN_API_KEY="${GARMIN_API_KEY}"
 # PostHog Analytics
 NEXT_PUBLIC_POSTHOG_KEY="${POSTHOG_KEY}"
 NEXT_PUBLIC_POSTHOG_HOST="https://eu.i.posthog.com"
+POSTHOG_PERSONAL_API_KEY="${POSTHOG_PERSONAL_KEY}"
+POSTHOG_PROJECT_ID="${POSTHOG_PROJECT_ID}"
 
 # Legal
 NEXT_PUBLIC_LEGAL_URL="https://lacrp.ciankelly.xyz/project-overwatch-legal-documents"
@@ -305,6 +309,15 @@ else
     fi
     if ! grep -q "DATA_DIR=" "${SHARED_ENV_FILE}"; then
         echo "DATA_DIR=\"${DATA_DIR}\"" >> "${SHARED_ENV_FILE}"
+    fi
+    # PostHog Status Dashboard keys
+    if ! grep -q "POSTHOG_PERSONAL_API_KEY=" "${SHARED_ENV_FILE}"; then
+        read -p "Missing PostHog Personal API Key (for status dashboard): " VAL
+        echo "POSTHOG_PERSONAL_API_KEY=\"$VAL\"" >> "${SHARED_ENV_FILE}"
+    fi
+    if ! grep -q "POSTHOG_PROJECT_ID=" "${SHARED_ENV_FILE}"; then
+        read -p "Missing PostHog Project ID (number from URL): " VAL
+        echo "POSTHOG_PROJECT_ID=\"$VAL\"" >> "${SHARED_ENV_FILE}"
     fi
     
     echo -e "${GREEN}All required environment variables verified.${NC}"

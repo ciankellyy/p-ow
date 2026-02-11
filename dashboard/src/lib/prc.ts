@@ -1,4 +1,5 @@
 import { PrcServer, PrcPlayer, PrcJoinLog, PrcKillLog, PrcCommandLog } from "./prc-types"
+import { trackApiCall } from "./metrics"
 
 const BASE_URL = "https://api.policeroleplay.community/v1"
 const DEFAULT_WEBHOOK_URL = process.env.DISCORD_PUNISHMENT_WEBHOOK
@@ -129,6 +130,7 @@ export class PrcClient {
 
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 8000)
+        const startTime = Date.now()
 
         try {
             const res = await fetch(`${BASE_URL}${endpoint}`, {
@@ -153,11 +155,18 @@ export class PrcClient {
                         await new Promise(resolve => setTimeout(resolve, retryAfter * 1000))
                         return this.doFetch<T>(endpoint, options, retryCount + 1)
                     }
+                    trackApiCall("prc", endpoint, Date.now() - startTime, "error", "Rate Limited")
                     throw new Error("Rate Limited")
                 }
-                if (res.status === 403) throw new Error("Invalid API Key")
+                if (res.status === 403) {
+                    trackApiCall("prc", endpoint, Date.now() - startTime, "error", "Invalid API Key")
+                    throw new Error("Invalid API Key")
+                }
+                trackApiCall("prc", endpoint, Date.now() - startTime, "error", res.statusText)
                 throw new Error(`PRC API Error: ${res.statusText}`)
             }
+
+            trackApiCall("prc", endpoint, Date.now() - startTime, "ok")
 
             const text = await res.text()
             try {
@@ -168,7 +177,11 @@ export class PrcClient {
             }
         } catch (error: any) {
             clearTimeout(timeoutId)
-            if (error.name === 'AbortError') throw new Error("PRC API Timeout")
+            if (error.name === 'AbortError') {
+                trackApiCall("prc", endpoint, Date.now() - startTime, "timeout", "PRC API Timeout")
+                throw new Error("PRC API Timeout")
+            }
+            trackApiCall("prc", endpoint, Date.now() - startTime, "error", error.message)
             throw error
         }
     }

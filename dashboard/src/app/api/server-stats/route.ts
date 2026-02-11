@@ -1,9 +1,10 @@
 import { getSession } from "@/lib/auth-clerk"
 import { prisma } from "@/lib/db"
 import { PrcClient } from "@/lib/prc"
+import { withMetrics } from "@/lib/api-metrics"
 import { NextResponse } from "next/server"
 
-export async function GET(req: Request) {
+export const GET = withMetrics("/api/server-stats", async (req: Request) => {
     const session = await getSession()
     if (!session) return new NextResponse("Unauthorized", { status: 401 })
 
@@ -35,4 +36,4 @@ export async function GET(req: Request) {
             maxPlayers: 0
         })
     }
-}
+})

@@ -1,5 +1,6 @@
 
 import { auth, currentUser } from "@clerk/nextjs/server"
+import { trackApiCall } from "./metrics"
 
 // Timeout wrapper to prevent Clerk outages from hanging all requests
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
@@ -20,7 +21,10 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null
 // Helper to get consistent user object, similar to what we had
 // Also enforces Discord and Roblox connection if needed
 export async function getSession() {
+    const start = Date.now()
     const user = await withTimeout(currentUser(), 5000)
+    const duration = Date.now() - start
+    trackApiCall("clerk", "currentUser", duration, user ? "ok" : "error", user ? undefined : "Timeout or null")
     if (!user) return null
 
     // Find discord account (cast to string to handle Clerk's strict types)

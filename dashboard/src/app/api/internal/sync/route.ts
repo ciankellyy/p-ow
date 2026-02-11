@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db"
 import { fetchAndSaveLogs } from "@/lib/log-syncer"
+import { trackSyncCycle } from "@/lib/metrics"
 import { NextResponse } from "next/server"
 
 const INTERNAL_SECRET = process.env.INTERNAL_SYNC_SECRET!
@@ -31,13 +32,20 @@ export async function POST(req: Request) {
         const promises = servers.map(async (server: any) => {
             if (!server.apiUrl) return
 
-            const res = await fetchAndSaveLogs(server.apiUrl, server.id)
+            const syncStart = Date.now()
+            try {
+                const res = await fetchAndSaveLogs(server.apiUrl, server.id)
 
-            // Tick automations (time-based)
-            const { AutomationEngine } = await import("@/lib/automation-engine")
-            await AutomationEngine.tick(server.id)
+                // Tick automations (time-based)
+                const { AutomationEngine } = await import("@/lib/automation-engine")
+                await AutomationEngine.tick(server.id)
 
-            return { serverId: server.id, newLogs: res.newLogsCount }
+                trackSyncCycle(server.id, Date.now() - syncStart, res.newLogsCount, "ok")
+                return { serverId: server.id, newLogs: res.newLogsCount }
+            } catch (e: any) {
+                trackSyncCycle(server.id, Date.now() - syncStart, 0, "error", e.message)
+                throw e
+            }
         })
 
         const data = await Promise.all(promises)
@@ -47,3 +55,4 @@ export async function POST(req: Request) {
         return new NextResponse(e.message, { status: 500 })
     }
 }
+

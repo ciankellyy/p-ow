@@ -4,9 +4,10 @@ import { prisma } from "@/lib/db"
 import { PrcClient } from "@/lib/prc"
 import { getUserPermissions } from "@/lib/admin"
 import { verifyPermissionOrError } from "@/lib/auth-permissions"
+import { withMetrics } from "@/lib/api-metrics"
 import { NextResponse } from "next/server"
 
-export async function POST(req: Request) {
+export const POST = withMetrics("/api/command", async (req: Request) => {
     const session = await getSession()
     if (!session) return new NextResponse("Unauthorized", { status: 401 })
 
@@ -68,4 +69,4 @@ export async function POST(req: Request) {
         }
         return NextResponse.json({ error: msg }, { status: 500 })
     }
-}
+})
