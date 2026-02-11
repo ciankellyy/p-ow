@@ -164,3 +164,4 @@ vision/.DS_Store
 .DS_Store
 dashboard/prisma/dev.db
 dashboard/data/uploads/
+check_quotes.py

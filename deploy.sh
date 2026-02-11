@@ -83,7 +83,7 @@ if ! command -v pm2 &> /dev/null; then
 fi
 
 echo -e "${YELLOW}[0/8] PRAYING TO MITER NETANYAHUUUUU...${NC}"
-echo -e "${RED}PLEASE MISTER NETANYAHU IM SO CLOSE TO DEPLOYING IT PLEASE JUST NO TYPESCRIPT ERRORS AND NO PRISMA ERRORS
+echo -e "${RED}PLEASE MISTER NETANYAHU IM SO CLOSE TO DEPLOYING IT PLEASE JUST NO TYPESCRIPT ERRORS AND NO PRISMA ERRORS${NC}"
 # --- 1. Setup Directories ---
 echo -e "${YELLOW}[1/8] Setting up directories...${NC}"
 mkdir -p ${RELEASES_DIR}
@@ -124,13 +124,13 @@ if [ ! -f "${SHARED_ENV_FILE}" ]; then
     read -p "Discord Guild ID: " GUILD_ID
     read -p "Clerk Secret Key: " CLERK_SECRET_KEY
     read -p "Clerk Publishable Key: " NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-    read -p "Roblox API Key (Open Cloud): " ROBLOX_API_KEY
+    read -p "Roblox API Key - Open Cloud: " ROBLOX_API_KEY
     read -p "Discord Punishment Webhook URL: " DISCORD_PUNISHMENT_WEBHOOK
     read -p "Mistral API Key: " MISTRAL_API_KEY
     read -p "Garmin API Key: " GARMIN_API_KEY
     read -p "PostHog Project API Key: " POSTHOG_KEY
-    read -p "PostHog Personal API Key (for status dashboard, from PostHog > Settings > Personal API Keys): " POSTHOG_PERSONAL_KEY
-    read -p "PostHog Project ID (number from PostHog URL, e.g. 12345): " POSTHOG_PROJECT_ID
+    read -p "PostHog Personal API Key - from PostHog Settings -> Personal API Keys: " POSTHOG_PERSONAL_KEY
+    read -p "PostHog Project ID - number from PostHog URL e.g. 12345: " POSTHOG_PROJECT_ID
     
     NEXTAUTH_SECRET=$(openssl rand -base64 32)
     INTERNAL_SECRET=$(openssl rand -base64 32)
@@ -261,18 +261,18 @@ else
         echo "Without these, the API routes will return 404 errors."
         echo ""
         if [ "$CLERK_SECRET_MISSING" = true ]; then
-            read -p "Clerk Secret Key (CLERK_SECRET_KEY): " VAL
+            read -p "Clerk Secret Key - CLERK_SECRET_KEY: " VAL
             echo "CLERK_SECRET_KEY=\"$VAL\"" >> "${SHARED_ENV_FILE}"
         fi
         if [ "$CLERK_PUBLISHABLE_MISSING" = true ]; then
-            read -p "Clerk Publishable Key (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY): " VAL
+            read -p "Clerk Publishable Key - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: " VAL
             echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=\"$VAL\"" >> "${SHARED_ENV_FILE}"
         fi
     fi
     
     # External API Keys
     if ! grep -q "ROBLOX_API_KEY=" "${SHARED_ENV_FILE}"; then
-        read -p "Missing Roblox API Key (Open Cloud): " VAL
+        read -p "Missing Roblox API Key - Open Cloud: " VAL
         echo "ROBLOX_API_KEY=\"$VAL\"" >> "${SHARED_ENV_FILE}"
     fi
     if ! grep -q "MISTRAL_API_KEY=" "${SHARED_ENV_FILE}"; then
@@ -312,11 +312,11 @@ else
     fi
     # PostHog Status Dashboard keys
     if ! grep -q "POSTHOG_PERSONAL_API_KEY=" "${SHARED_ENV_FILE}"; then
-        read -p "Missing PostHog Personal API Key (for status dashboard): " VAL
+        read -p "Missing PostHog Personal API Key - for status dashboard: " VAL
         echo "POSTHOG_PERSONAL_API_KEY=\"$VAL\"" >> "${SHARED_ENV_FILE}"
     fi
     if ! grep -q "POSTHOG_PROJECT_ID=" "${SHARED_ENV_FILE}"; then
-        read -p "Missing PostHog Project ID (number from URL): " VAL
+        read -p "Missing PostHog Project ID - number from URL: " VAL
         echo "POSTHOG_PROJECT_ID=\"$VAL\"" >> "${SHARED_ENV_FILE}"
     fi
     
@@ -329,7 +329,7 @@ echo -e "${YELLOW}[FINAL CHECK] Verifying critical Clerk authentication keys...$
 if ! grep -q "CLERK_SECRET_KEY=" "${SHARED_ENV_FILE}"; then
     echo -e "${RED}[CRITICAL] CLERK_SECRET_KEY is MISSING from .env file!${NC}"
     echo "This must be configured for the API to work correctly."
-    read -p "Enter your Clerk Secret Key (CLERK_SECRET_KEY): " CLERK_SK
+    read -p "Enter your Clerk Secret Key - CLERK_SECRET_KEY: " CLERK_SK
     sed -i "/^CLERK_SECRET_KEY=/d" "${SHARED_ENV_FILE}" 2>/dev/null || true
     echo "CLERK_SECRET_KEY=\"${CLERK_SK}\"" >> "${SHARED_ENV_FILE}"
     echo -e "${GREEN}Added CLERK_SECRET_KEY${NC}"
@@ -338,7 +338,7 @@ fi
 if ! grep -q "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=" "${SHARED_ENV_FILE}"; then
     echo -e "${RED}[CRITICAL] NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is MISSING from .env file!${NC}"
     echo "This must be configured for the API to work correctly."
-    read -p "Enter your Clerk Publishable Key (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY): " CLERK_PK
+    read -p "Enter your Clerk Publishable Key - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: " CLERK_PK
     sed -i "/^NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=/d" "${SHARED_ENV_FILE}" 2>/dev/null || true
     echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=\"${CLERK_PK}\"" >> "${SHARED_ENV_FILE}"
     echo -e "${GREEN}Added NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY${NC}"
@@ -398,7 +398,7 @@ fi
 echo -e "${GREEN}[OK] All Clerk keys verified in deployed files.${NC}"
 
 # --- 4. Install Dependencies ---
-echo -e "${YELLOW}[4/8] Installing dependencies (this may take a moment)...${NC}"
+echo -e "${YELLOW}[4/8] Installing dependencies - this may take a moment...${NC}"
 
 # Store the project root before changing directories
 PROJECT_ROOT=$(pwd)
@@ -430,7 +430,8 @@ if [ ! -f "${DB_FILE}" ]; then
     npx prisma migrate deploy || npx prisma db push --skip-generate
     echo -e "${GREEN}New database created successfully.${NC}"
 else
-    echo -e "${GREEN}Existing database found at ${DB_FILE} ($(ls -lh ${DB_FILE} | awk '{print $5}'))${NC}"
+    DB_SIZE=$(ls -lh "${DB_FILE}" | awk '{print $5}')
+    echo -e "${GREEN}Existing database found at ${DB_FILE} [size: ${DB_SIZE}]${NC}"
     # NEVER use --accept-data-loss on existing database!
     # Just run migrate deploy to apply any new migrations
     cd "${PROJECT_ROOT}/${NEW_RELEASE_DIR}/dashboard"
@@ -473,7 +474,8 @@ echo "Using DATABASE_URL: ${DATABASE_URL}"
 
 # Verify database file exists
 if [ -f "/root/data/pow.db" ]; then
-    echo -e "${GREEN}Database file exists at /root/data/pow.db ($(ls -lh /root/data/pow.db | awk '{print $5}'))${NC}"
+    DB_SIZE=$(ls -lh "/root/data/pow.db" | awk '{print $5}')
+    echo -e "${GREEN}Database file exists at /root/data/pow.db [size: ${DB_SIZE}]${NC}"
 else
     echo -e "${RED}[ERROR] Database file NOT FOUND at /root/data/pow.db!${NC}"
     echo "This will cause the application to fail. Please restore the database."
