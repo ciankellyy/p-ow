@@ -155,18 +155,18 @@ export class PrcClient {
                         await new Promise(resolve => setTimeout(resolve, retryAfter * 1000))
                         return this.doFetch<T>(endpoint, options, retryCount + 1)
                     }
-                    trackApiCall("prc", endpoint, Date.now() - startTime, "error", "Rate Limited")
+                    trackApiCall("prc", endpoint, Date.now() - startTime, "error", "Rate Limited", { server_id: this.keyHash }, 429)
                     throw new Error("Rate Limited")
                 }
                 if (res.status === 403) {
-                    trackApiCall("prc", endpoint, Date.now() - startTime, "error", "Invalid API Key")
+                    trackApiCall("prc", endpoint, Date.now() - startTime, "error", "Invalid API Key", { server_id: this.keyHash }, 403)
                     throw new Error("Invalid API Key")
                 }
-                trackApiCall("prc", endpoint, Date.now() - startTime, "error", res.statusText)
+                trackApiCall("prc", endpoint, Date.now() - startTime, "error", res.statusText, { server_id: this.keyHash }, res.status)
                 throw new Error(`PRC API Error: ${res.statusText}`)
             }
 
-            trackApiCall("prc", endpoint, Date.now() - startTime, "ok")
+            trackApiCall("prc", endpoint, Date.now() - startTime, "ok", undefined, { server_id: this.keyHash }, res.status)
 
             const text = await res.text()
             try {
@@ -178,10 +178,10 @@ export class PrcClient {
         } catch (error: any) {
             clearTimeout(timeoutId)
             if (error.name === 'AbortError') {
-                trackApiCall("prc", endpoint, Date.now() - startTime, "timeout", "PRC API Timeout")
+                trackApiCall("prc", endpoint, Date.now() - startTime, "timeout", "PRC API Timeout", { server_id: this.keyHash }, 408)
                 throw new Error("PRC API Timeout")
             }
-            trackApiCall("prc", endpoint, Date.now() - startTime, "error", error.message)
+            trackApiCall("prc", endpoint, Date.now() - startTime, "error", error.message, { server_id: this.keyHash }, 500)
             throw error
         }
     }

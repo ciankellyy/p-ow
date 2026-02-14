@@ -22,7 +22,9 @@ export function trackApiCall(
     endpoint: string,
     durationMs: number,
     status: "ok" | "error" | "timeout",
-    errorMessage?: string
+    errorMessage?: string,
+    metadata?: Record<string, any>,
+    statusCode?: number
 ) {
     try {
         const posthog = PostHogClient()
@@ -35,7 +37,9 @@ export function trackApiCall(
                 duration_ms: Math.round(durationMs),
                 status,
                 error_message: errorMessage || null,
-                timestamp_iso: new Date().toISOString()
+                timestamp_iso: new Date().toISOString(),
+                http_status: statusCode || (status === "ok" ? 200 : 500),
+                ...(metadata || {})
             }
         })
     } catch {

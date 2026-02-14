@@ -16,11 +16,11 @@ export function withMetrics(
             const duration = Date.now() - start
             // .status exists on both Response and NextResponse
             const statusCode = response.status || 200
-            trackApiCall("pow-api", pathname, duration, statusCode >= 400 ? "error" : "ok", statusCode >= 400 ? `HTTP ${statusCode}` : undefined)
+            trackApiCall("pow-api", pathname, duration, statusCode >= 400 ? "error" : "ok", statusCode >= 400 ? `HTTP ${statusCode}` : undefined, undefined, statusCode)
             return response
         } catch (error: any) {
             const duration = Date.now() - start
-            trackApiCall("pow-api", pathname, duration, "error", error.message)
+            trackApiCall("pow-api", pathname, duration, "error", error.message, undefined, 500)
             throw error
         }
     }

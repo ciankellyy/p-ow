@@ -525,7 +525,7 @@ echo -e "${GREEN}Applications reloaded successfully! Your new version is LIVE.${
 # --- 8. Cleanup ---
 echo -e "${YELLOW}[8/8] Cleaning up old releases...${NC}"
 # Find all release directories, sort them by name (timestamp), and keep the newest ones.
-OLD_RELEASES=$(ls -r1 "${RELEASES_DIR}" | tail -n +$((${RELEASES_TO_KEEP}+1)))
+OLD_RELEASES=$(ls -r1 "${RELEASES_DIR}" | tail -n +$((RELEASES_TO_KEEP+1)))
 if [ -n "${OLD_RELEASES}" ]; then
     for release in ${OLD_RELEASES}; do
         echo "Deleting old release: ${RELEASES_DIR}/${release}"

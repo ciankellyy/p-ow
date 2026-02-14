@@ -59,6 +59,7 @@ interface MetricsData {
         prc: EndpointData[]
         powApi: EndpointData[]
     }
+    statusCodes: { code: string; count: number }[]
     recentErrors: {
         service: string
         endpoint: string
@@ -66,6 +67,7 @@ interface MetricsData {
         error: string
         time: string
         durationMs: number
+        serverId?: string
     }[]
     dataPoints: {
         apiEvents: number
@@ -342,6 +344,37 @@ function EndpointTable({ endpoints, title }: { endpoints: EndpointData[]; title:
     )
 }
 
+function StatusCodeChart({ data }: { data: { code: string; count: number }[] }) {
+    if (!data || data.length === 0) return null
+
+    const total = data.reduce((a, b) => a + b.count, 0)
+
+    return (
+        <div className="bg-[#1a1a1a] rounded-2xl p-6 border border-white/5 h-full">
+            <h3 className="text-sm font-medium text-zinc-400 mb-4">HTTP Response Codes</h3>
+            <div className="space-y-3">
+                {data.slice(0, 5).map((item) => {
+                    const code = parseInt(item.code)
+                    const color = code >= 500 ? "bg-red-500" : code >= 400 ? "bg-amber-500" : "bg-emerald-500"
+                    const percent = Math.round((item.count / total) * 100)
+
+                    return (
+                        <div key={item.code}>
+                            <div className="flex justify-between text-xs mb-1">
+                                <span className="text-zinc-300 font-mono">{item.code}</span>
+                                <span className="text-zinc-500">{item.count.toLocaleString()} ({percent}%)</span>
+                            </div>
+                            <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                <div className={`h-full ${color}`} style={{ width: `${percent}%` }} />
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
+        </div>
+    )
+}
+
 export default function StatusPage() {
     const [data, setData] = useState<MetricsData | null>(null)
     const [loading, setLoading] = useState(true)
@@ -430,8 +463,8 @@ export default function StatusPage() {
                                     key={h}
                                     onClick={() => { setHours(h); setLoading(true) }}
                                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${hours === h
-                                            ? "bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30"
-                                            : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+                                        ? "bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30"
+                                        : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
                                         }`}
                                 >
                                     {h === 1 ? "1h" : h === 6 ? "6h" : h === 24 ? "24h" : "7d"}
@@ -530,7 +563,15 @@ export default function StatusPage() {
                         <ResponseTimeChart data={data.timeSeries.prc} title="PRC API Response Time" color="#818cf8" />
                         <ResponseTimeChart data={data.timeSeries.clerk} title="Clerk Auth Response Time" color="#f472b6" />
                     </div>
-                    <ResponseTimeChart data={data.timeSeries.powApi} title="POW Internal API Response Time" color="#34d399" />
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <div className="lg:col-span-2">
+                            <ResponseTimeChart data={data.timeSeries.powApi} title="POW Internal API Response Time" color="#34d399" />
+                        </div>
+                        <div>
+                            <StatusCodeChart data={data.statusCodes} />
+                        </div>
+                    </div>
 
                     {/* Endpoint Tables */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -543,7 +584,7 @@ export default function StatusPage() {
                         <div className="bg-[#1a1a1a] rounded-2xl border border-white/5 overflow-hidden">
                             <div className="px-5 py-4 border-b border-white/5 flex items-center gap-2">
                                 <AlertTriangle className="h-4 w-4 text-red-400" />
-                                <h3 className="text-sm font-medium text-zinc-400">Recent Errors</h3>
+                                <h3 className="text-sm font-medium text-zinc-400">Recent Service Errors</h3>
                                 <span className="ml-auto text-xs text-zinc-600">{data.recentErrors.length} errors</span>
                             </div>
                             <div className="divide-y divide-white/5 max-h-96 overflow-y-auto">
@@ -554,6 +595,11 @@ export default function StatusPage() {
                                             <div className="flex items-center gap-2 text-xs">
                                                 <span className="text-zinc-400 font-medium uppercase">{err.service}</span>
                                                 <code className="text-zinc-500 truncate">{err.endpoint}</code>
+                                                {err.serverId && (
+                                                    <span className="text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                                                        {err.serverId}
+                                                    </span>
+                                                )}
                                                 <span className="ml-auto text-zinc-600 shrink-0">{err.durationMs}ms</span>
                                             </div>
                                             <p className="text-xs text-red-400/80 mt-0.5 truncate">{err.error}</p>

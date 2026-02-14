@@ -34,8 +34,9 @@ async function queryPostHogEvents(eventName: string, hours: number = 24): Promis
                 body: JSON.stringify({
                     query: {
                         kind: "HogQLQuery",
-                        // Use toDateTime() for robust timestamp comparison in HogQL
-                        query: `SELECT event, properties, timestamp FROM events WHERE event = '${eventName}' AND timestamp > toDateTime('${after}') ORDER BY timestamp DESC LIMIT 500`
+                        // Increased limit to effectively "no limit" (100k) as requested.
+                        // Standard PostHog limit is 50-100k for direct queries.
+                        query: `SELECT event, properties, timestamp FROM events WHERE event = '${eventName}' AND timestamp > toDateTime('${after}') ORDER BY timestamp DESC LIMIT 100000`
                     }
                 }),
                 cache: "no-store",
@@ -56,11 +57,15 @@ async function queryPostHogEvents(eventName: string, hours: number = 24): Promis
         const propsIdx = columns.indexOf("properties")
         const tsIdx = columns.indexOf("timestamp")
 
-        return rows.map((row) => ({
-            event: row[eventIdx] || eventName,
-            properties: typeof row[propsIdx] === "string" ? JSON.parse(row[propsIdx]) : (row[propsIdx] || {}),
-            timestamp: row[tsIdx] || "",
-        }))
+        return rows.map((row) => {
+            const rawProps = row[propsIdx]
+            const properties = typeof rawProps === "string" ? JSON.parse(rawProps) : (rawProps || {})
+            return {
+                event: row[eventIdx] || eventName,
+                properties,
+                timestamp: row[tsIdx] || "",
+            }
+        })
     } catch (e) {
         console.error("[METRICS] Failed to query PostHog:", e)
         return []
@@ -90,27 +95,64 @@ function aggregateServiceMetrics(events: PostHogEvent[], service: string) {
     }
 }
 
-function getTimeSeries(events: PostHogEvent[], service: string, bucketMinutes: number = 5) {
+// Helper to get status code breakdown
+function getStatusCodeBreakdown(events: PostHogEvent[]) {
+    const codes = new Map<string, number>()
+    for (const e of events) {
+        // Use the http_status property, fallback to status
+        const code = e.properties.http_status || (e.properties.status === "ok" ? 200 : 500)
+        const key = code.toString()
+        codes.set(key, (codes.get(key) || 0) + 1)
+    }
+
+    return Array.from(codes.entries())
+        .map(([code, count]) => ({ code, count }))
+        .sort((a, b) => b.count - a.count)
+}
+
+function getTimeSeries(events: PostHogEvent[], service: string, hours: number, bucketMinutes: number = 5) {
     const serviceEvents = events.filter((e) => e.properties.service === service)
     const buckets = new Map<string, { durations: number[]; errors: number }>()
 
+    // Initialize ALL buckets with zeros to prevent gaps that break charts
+    // Use UTC to ensure alignment with PostHog's ISO strings
+    const now = new Date()
+    const start = new Date(now.getTime() - hours * 60 * 60 * 1000)
+
+    // Round down to nearest bucket minute
+    const startMs = start.getTime()
+    const bucketMs = bucketMinutes * 60 * 1000
+    const roundedStart = Math.floor(startMs / bucketMs) * bucketMs
+
+    for (let t = roundedStart; t <= now.getTime(); t += bucketMs) {
+        buckets.set(new Date(t).toISOString(), { durations: [], errors: 0 })
+    }
+
     for (const e of serviceEvents) {
         const ts = new Date(e.timestamp)
-        // Round to bucket
-        ts.setMinutes(Math.floor(ts.getMinutes() / bucketMinutes) * bucketMinutes, 0, 0)
-        const key = ts.toISOString()
-        const bucket = buckets.get(key) || { durations: [], errors: 0 }
+        const tMs = ts.getTime()
+        const roundedT = Math.floor(tMs / bucketMs) * bucketMs
+
+        // Find the closest bucket key (since ISO strings might differ slightly due to seconds/ms)
+        // We regenerate the ISO string from the rounded timestamp
+        const key = new Date(roundedT).toISOString()
+
+        // If exact key doesn't exist (edge case), find nearest or create
+        if (!buckets.has(key)) {
+            buckets.set(key, { durations: [], errors: 0 })
+        }
+
+        const bucket = buckets.get(key)!
         bucket.durations.push(e.properties.duration_ms)
         if (e.properties.status !== "ok") bucket.errors++
-        buckets.set(key, bucket)
     }
 
     return Array.from(buckets.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
+        .sort(([a], [b]) => a.localeCompare(b)) // ISO sort works for time
         .map(([time, data]) => ({
             time,
-            avgMs: Math.round(data.durations.reduce((a, b) => a + b, 0) / data.durations.length),
-            p95Ms: Math.round(data.durations.sort((a, b) => a - b)[Math.floor(data.durations.length * 0.95)] || 0),
+            avgMs: data.durations.length > 0 ? Math.round(data.durations.reduce((a, b) => a + b, 0) / data.durations.length) : 0,
+            p95Ms: data.durations.length > 0 ? Math.round(data.durations.sort((a, b) => a - b)[Math.floor(data.durations.length * 0.95)] || 0) : 0,
             errors: data.errors,
             calls: data.durations.length,
         }))
@@ -121,7 +163,11 @@ function getEndpointBreakdown(events: PostHogEvent[], service: string) {
     const byEndpoint = new Map<string, { durations: number[]; errors: number }>()
 
     for (const e of serviceEvents) {
-        const endpoint = e.properties.endpoint || "unknown"
+        // Fallback to "unknown" if endpoint is missing, but it should be there.
+        // Also strip query params if present to group correctly
+        let endpoint = e.properties.endpoint || "unknown"
+        if (endpoint.includes("?")) endpoint = endpoint.split("?")[0]
+
         const data = byEndpoint.get(endpoint) || { durations: [], errors: 0 }
         data.durations.push(e.properties.duration_ms)
         if (e.properties.status !== "ok") data.errors++
@@ -131,19 +177,29 @@ function getEndpointBreakdown(events: PostHogEvent[], service: string) {
     return Array.from(byEndpoint.entries())
         .map(([endpoint, data]) => ({
             endpoint,
-            avgMs: Math.round(data.durations.reduce((a, b) => a + b, 0) / data.durations.length),
-            p95Ms: Math.round(data.durations.sort((a, b) => a - b)[Math.floor(data.durations.length * 0.95)] || 0),
+            avgMs: Math.round(data.durations.length > 0 ? data.durations.reduce((a, b) => a + b, 0) / data.durations.length : 0),
+            p95Ms: Math.round(data.durations.length > 0 ? data.durations.sort((a, b) => a - b)[Math.floor(data.durations.length * 0.95)] || 0 : 0),
             calls: data.durations.length,
             errors: data.errors,
-            errorRate: Math.round(data.errors / data.durations.length * 100),
+            errorRate: data.durations.length > 0 ? Math.round(data.errors / data.durations.length * 100) : 0,
         }))
         .sort((a, b) => b.avgMs - a.avgMs)
 }
 
 export async function GET(req: Request) {
-    const session = await getSession()
-    if (!session) return new NextResponse("Unauthorized", { status: 401 })
-    if (!isSuperAdmin(session.user as any)) return new NextResponse("Forbidden", { status: 403 })
+    // Check for IP bypass (Tailscale/VPN)
+    const forwardedFor = req.headers.get("x-forwarded-for")
+    const remoteAddr = req.headers.get("remote-addr") // Sometimes used in different setups
+    const ip = forwardedFor ? forwardedFor.split(",")[0].trim() : remoteAddr
+
+    const isAllowedIp = ip === "92.60.38.109"
+
+    // If not on allowed IP, require authentication
+    if (!isAllowedIp) {
+        const session = await getSession()
+        if (!session) return new NextResponse("Unauthorized", { status: 401 })
+        if (!isSuperAdmin(session.user as any)) return new NextResponse("Forbidden", { status: 403 })
+    }
 
     const { searchParams } = new URL(req.url)
     const hours = parseInt(searchParams.get("hours") || "6")
@@ -191,9 +247,9 @@ export async function GET(req: Request) {
 
     // Time series for charts
     const timeSeries = {
-        prc: getTimeSeries(apiEvents, "prc"),
-        clerk: getTimeSeries(apiEvents, "clerk"),
-        powApi: getTimeSeries(apiEvents, "pow-api"),
+        prc: getTimeSeries(apiEvents, "prc", hours),
+        clerk: getTimeSeries(apiEvents, "clerk", hours),
+        powApi: getTimeSeries(apiEvents, "pow-api", hours),
     }
 
     // Endpoint breakdown
@@ -202,10 +258,13 @@ export async function GET(req: Request) {
         powApi: getEndpointBreakdown(apiEvents, "pow-api"),
     }
 
+    // Status code breakdown
+    const statusCodes = getStatusCodeBreakdown(apiEvents)
+
     // Recent errors across all services
     const recentErrors = apiEvents
         .filter((e) => e.properties.status !== "ok")
-        .slice(0, 15)
+        .slice(0, 20)
         .map((e) => ({
             service: e.properties.service,
             endpoint: e.properties.endpoint,
@@ -213,6 +272,7 @@ export async function GET(req: Request) {
             error: e.properties.error_message,
             time: e.timestamp,
             durationMs: e.properties.duration_ms,
+            serverId: e.properties.server_id
         }))
 
     return NextResponse.json({
@@ -221,6 +281,7 @@ export async function GET(req: Request) {
         syncStats,
         timeSeries,
         endpoints,
+        statusCodes,
         recentErrors,
         dataPoints: {
             apiEvents: apiEvents.length,
