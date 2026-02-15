@@ -48,38 +48,6 @@ export async function POST(req: Request) {
     }
 }
 
-// Validate and consume a handshake code
-export async function GET(req: Request) {
-    try {
-        cleanupExpired()
-
-        const url = new URL(req.url)
-        const code = url.searchParams.get("code")
-
-        if (!code) {
-            return NextResponse.json({ valid: false }, { headers: visionCorsHeaders })
-        }
-
-        const handshake = handshakeCodes.get(code)
-
-        if (!handshake) {
-            return NextResponse.json({ valid: false }, { headers: visionCorsHeaders })
-        }
-
-        if (Date.now() > handshake.expiresAt) {
-            handshakeCodes.delete(code)
-            return NextResponse.json({ valid: false, error: "expired" }, { headers: visionCorsHeaders })
-        }
-
-        // Consume the code (one-time use)
-        handshakeCodes.delete(code)
-
-        return NextResponse.json({ valid: true }, { headers: visionCorsHeaders })
-    } catch (error) {
-        console.error("[Vision Handshake] Validate error:", error)
-        return NextResponse.json({ valid: false }, { status: 500, headers: visionCorsHeaders })
-    }
-}
 
 // Export the map for the vision-auth page to use
 export { handshakeCodes }
