@@ -1,4 +1,6 @@
-# ⚠️ THIS PROJECT IS NOT MEANT TO BE DEPLOYED ON OTHER SYSTEMS. USE LIMITED TO LACOMM. READ LICENSE.
+# ⚠️ THIS PROJECT IS NOT MEANT TO BE DEPLOYED ON OTHER SYSTEMS. OWNED AND OPERATED BY ATRIA
+### Atria is a fiscally sponsored 501(c)(3) non-profit.
+### Thanks to The Hack Foundation, d.b.a. Hack Club.
 
 ---
 
@@ -42,49 +44,6 @@ p-ow/
   - Quick punishment actions (Warn, Kick, Ban, BOLO)
   - System tray support with hotkey toggle
 
-## 🚀 Quick Start
-
-### Prerequisites
-- Node.js 20+
-- npm
-
-### Development
-
-1. **Install dependencies**:
-   ```bash
-   npm install
-   cd dashboard && npm install
-   cd ../bot && npm install
-   cd ../vision && npm install
-   ```
-
-2. **Set up environment**:
-   Copy `.env.example` to `.env` and fill in your credentials.
-
-3. **Run components**:
-   ```bash
-   # Dashboard
-   cd dashboard && npm run dev
-
-   # Bot
-   cd bot && npm run dev
-
-   # Vision
-   cd vision && npm run dev
-   ```
-
-## 🔑 Environment Variables
-
-See `.env.example` for all required variables. Key ones include:
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | SQLite database path |
-| `CLERK_SECRET_KEY` | Clerk authentication |
-| `DISCORD_TOKEN` | Discord bot token |
-| `VISION_JWT_SECRET` | JWT signing key for Vision auth |
-| `VISION_HMAC_SECRET` | HMAC key for Vision request signing |
-| `MISTRAL_API_KEY` | AI for OCR processing |
 
 ## 📄 License
 
@@ -92,4 +51,4 @@ This project is licensed under a custom restrictive license. See [LICENSE](LICEN
 
 ---
 
-Built with ❤️ by the POW Team
+Built with ❤️ by the Atria Team
