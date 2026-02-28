@@ -46,8 +46,8 @@ export async function POST(req: Request) {
 
         if (id) {
             // Update
-            const automation = await prisma.automation.update({
-                where: { id },
+            const automation = await prisma.automation.updateMany({
+                where: { id, serverId }, // Enforce tenant isolation to prevent IDOR
                 data: {
                     name,
                     trigger,
@@ -56,13 +56,14 @@ export async function POST(req: Request) {
                     enabled
                 }
             })
-            return NextResponse.json(automation)
+            // Since updateMany returns a count, we need to fetch the updated record if we want to return it, or just return success
+            return NextResponse.json({ success: automation.count > 0 })
         } else {
             // Check subscription automation limit
             const { checkLimit } = await import("@/lib/subscription")
-            const { isFeatureEnabled } = await import("@/lib/feature-flags")
+            const { isServerFeatureEnabled } = await import("@/lib/feature-flags")
 
-            const limitsEnabled = await isFeatureEnabled('AUTOMATIONS_LIMIT_CHECK')
+            const limitsEnabled = await isServerFeatureEnabled('AUTOMATIONS_LIMIT_CHECK', serverId)
             if (limitsEnabled) {
                 const { allowed, current, max } = await checkLimit(serverId, 'automations')
                 if (!allowed) {
@@ -107,8 +108,8 @@ export async function DELETE(req: Request) {
             return new NextResponse("Forbidden", { status: 403 })
         }
 
-        await prisma.automation.delete({
-            where: { id }
+        await prisma.automation.deleteMany({
+            where: { id, serverId } // Enforce tenant isolation
         })
 
         return NextResponse.json({ success: true })

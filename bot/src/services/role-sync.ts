@@ -1,18 +1,21 @@
 import { Client } from "discord.js"
 import { PrismaClient } from "@prisma/client"
-
-const SYNC_INTERVAL_MS = 10000 // 10 seconds
+import { getGlobalConfig } from "../lib/config"
 
 export function startAutoRoleSync(client: Client, prisma: PrismaClient) {
-    console.log("Starting auto role sync service (10s interval)")
+    console.log("Starting auto role sync service (dynamic interval)")
 
-    setInterval(async () => {
+    async function schedule() {
         try {
             await syncAllServerRoles(client, prisma)
         } catch (e) {
             console.error("Auto role sync error:", e)
         }
-    }, SYNC_INTERVAL_MS)
+        const interval = await getGlobalConfig("ROLE_SYNC_INTERVAL_MS")
+        setTimeout(schedule, interval)
+    }
+
+    schedule()
 }
 
 async function syncAllServerRoles(client: Client, prisma: PrismaClient) {
@@ -56,26 +59,27 @@ async function syncAllServerRoles(client: Client, prisma: PrismaClient) {
                 if (!member.discordId) continue
 
                 try {
-                    const guildMember = await guild.members.fetch(member.discordId).catch(() => null)
+                    // Use cache if possible, otherwise fetch
+                    const guildMember = guild.members.cache.get(member.discordId) || 
+                                       await guild.members.fetch(member.discordId).catch(() => null)
+                    
                     if (!guildMember) continue
 
-                    // Handle on-duty role - check against batch-fetched shifts
+                    // Handle on-duty role
                     if (server.onDutyRoleId) {
                         const isOnDuty = activeShiftUserIds.has(member.discordId) || activeShiftUserIds.has(member.userId)
+                        const hasRole = guildMember.roles.cache.has(server.onDutyRoleId)
 
-                        if (isOnDuty && !guildMember.roles.cache.has(server.onDutyRoleId)) {
-                            await guildMember.roles.add(server.onDutyRoleId).catch((e: any) => {
-                                console.warn(`[ROLE-SYNC] Failed to add role to ${member.discordId}:`, e.message || e)
-                            })
-                        } else if (!isOnDuty && guildMember.roles.cache.has(server.onDutyRoleId)) {
-                            await guildMember.roles.remove(server.onDutyRoleId).catch((e: any) => {
-                                console.warn(`[ROLE-SYNC] Failed to remove role from ${member.discordId}:`, e.message || e)
-                            })
+                        if (isOnDuty && !hasRole) {
+                            await guildMember.roles.add(server.onDutyRoleId).catch(() => {})
+                        } else if (!isOnDuty && hasRole) {
+                            await guildMember.roles.remove(server.onDutyRoleId).catch(() => {})
                         }
                     }
-                } catch (memberError: any) {
-                    // Continue with next member
-                }
+                } catch (memberError) {}
+                
+                // Small sleep to prevent hammering Discord Gateway in tight loops
+                await new Promise(r => setTimeout(r, 100))
             }
         } catch (serverError: any) {
             console.error(`Error syncing server ${server.name}:`, serverError.message || serverError)

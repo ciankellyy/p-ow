@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Crown, Zap, Star, Check, Link2, Unlink, Loader2, ChevronRight, ArrowLeft, Server } from "lucide-react"
 import Link from "next/link"
+import { useClerk } from "@clerk/nextjs"
 
 interface ServerOption {
     id: string
@@ -15,15 +16,26 @@ interface SubscriptionData {
     userPlan: string
     linkedServerId?: string
     servers: ServerOption[]
+    isSuperAdmin?: boolean
 }
 
 export default function SubscriptionPage() {
+    const { openUserProfile } = useClerk()
     const [data, setData] = useState<SubscriptionData | null>(null)
     const [loading, setLoading] = useState(true)
     const [linking, setLinking] = useState(false)
     const [selectedServer, setSelectedServer] = useState<string | null>(null)
+    const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
     useEffect(() => {
+        // Check for success
+        const params = new URLSearchParams(window.location.search)
+        if (params.get("success")) {
+            setSuccessMessage("Subscription activated successfully! It may take a moment to reflect.")
+            // Clean up URL
+            window.history.replaceState({}, '', '/dashboard/subscription')
+        }
+
         fetch("/api/subscription/link")
             .then(res => res.json())
             .then(d => {
@@ -38,11 +50,10 @@ export default function SubscriptionPage() {
         setSelectedServer(serverId)
 
         try {
-            // Default to pow-pro, user would select plan in real flow
             const res = await fetch("/api/subscription/link", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ serverId, plan: "pow-pro" })
+                body: JSON.stringify({ serverId, plan: data?.userPlan })
             })
 
             if (res.ok) {
@@ -58,11 +69,11 @@ export default function SubscriptionPage() {
         }
     }
 
-    const handleUnlink = async () => {
+    const handleUnlink = async (serverIdToUnlink: string) => {
         setLinking(true)
 
         try {
-            const res = await fetch("/api/subscription/link", { method: "DELETE" })
+            const res = await fetch(`/api/subscription/link?serverId=${serverIdToUnlink}`, { method: "DELETE" })
             if (res.ok) {
                 const updated = await fetch("/api/subscription/link").then(r => r.json())
                 setData(updated)
@@ -74,6 +85,10 @@ export default function SubscriptionPage() {
         }
     }
 
+    const handleManageBilling = () => {
+        openUserProfile()
+    }
+
     if (loading) {
         return (
             <div className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center">
@@ -82,8 +97,11 @@ export default function SubscriptionPage() {
         )
     }
 
-    const linkedServer = data?.servers.find(s => s.isLinkedToMe)
+    const linkedServers = data?.servers.filter(s => s.isLinkedToMe) || []
     const hasUserPlan = data?.userPlan === "pow-pro-user"
+    const hasServerPlan = data?.userPlan === "pow-pro" || data?.userPlan === "pow-max"
+    const hasAnyPlan = hasUserPlan || hasServerPlan
+    const isSuperAdmin = data?.isSuperAdmin
 
     return (
         <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -104,58 +122,85 @@ export default function SubscriptionPage() {
                 <h1 className="text-3xl font-bold mb-2">Your Subscription</h1>
                 <p className="text-zinc-400 mb-8">Manage your POW subscription and link it to a server</p>
 
+                {successMessage && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-4 rounded-xl mb-8 flex items-center gap-3">
+                        <Check className="h-5 w-5" />
+                        {successMessage}
+                    </div>
+                )}
+
                 {/* Current Plan */}
                 <div className="bg-[#1a1a1a] rounded-2xl border border-[#333] p-6 mb-8">
                     <div className="flex items-center gap-4">
-                        <div className={`h-14 w-14 rounded-xl flex items-center justify-center ${hasUserPlan ? "bg-blue-500/10" : "bg-zinc-500/10"
+                        <div className={`h-14 w-14 rounded-xl flex items-center justify-center ${hasAnyPlan ? "bg-blue-500/10" : "bg-zinc-500/10"
                             }`}>
-                            {hasUserPlan
+                            {hasAnyPlan
                                 ? <Zap className="h-7 w-7 text-blue-400" />
                                 : <Star className="h-7 w-7 text-zinc-400" />
                             }
                         </div>
                         <div className="flex-1">
-                            <h2 className="text-xl font-bold">{hasUserPlan ? "POW Pro User" : "Free"}</h2>
+                            <h2 className="text-xl font-bold">
+                                {data?.userPlan === "pow-max" ? "POW Max" :
+                                 data?.userPlan === "pow-pro" ? "POW Pro" :
+                                 data?.userPlan === "pow-pro-user" ? "POW Pro User" : "Free"}
+                                 {isSuperAdmin && <span className="ml-2 text-xs bg-amber-500/20 text-amber-500 px-2 py-1 rounded-full uppercase tracking-wider">Superadmin (Infinite)</span>}
+                            </h2>
                             <p className="text-zinc-400 text-sm">
-                                {hasUserPlan
-                                    ? "Personal subscription with Vision access"
-                                    : "Upgrade to unlock premium features"
-                                }
+                                {hasUserPlan ? "Personal subscription with Vision access" :
+                                 hasServerPlan ? "Server subscription with premium features" :
+                                 "Upgrade to unlock premium features"}
                             </p>
                         </div>
-                        {!hasUserPlan && (
-                            <Link
-                                href="/pricing"
-                                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors"
-                            >
-                                Upgrade
-                            </Link>
-                        )}
+                        <div className="flex items-center gap-2">
+                            {!hasAnyPlan ? (
+                                <Link
+                                    href="/pricing"
+                                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors"
+                                >
+                                    Upgrade
+                                </Link>
+                            ) : (
+                                <button
+                                    onClick={handleManageBilling}
+                                    disabled={linking}
+                                    className="px-4 py-2 border border-[#333] hover:bg-white/5 text-white font-semibold rounded-lg transition-colors"
+                                >
+                                    Manage Billing
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
 
-                {/* Linked Server */}
-                {linkedServer && (
-                    <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-2xl border border-purple-500/20 p-6 mb-8">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <div className="h-12 w-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                                    <Link2 className="h-6 w-6 text-purple-400" />
+                {/* Linked Servers */}
+                {linkedServers.length > 0 && (
+                    <div className="mb-8 space-y-4">
+                        <h2 className="text-lg font-bold flex items-center gap-2">
+                            <Link2 className="h-5 w-5 text-purple-400" />
+                            Linked Servers {isSuperAdmin && `(${linkedServers.length})`}
+                        </h2>
+                        {linkedServers.map(server => (
+                            <div key={server.id} className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-xl border border-purple-500/20 p-5 flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className="h-10 w-10 rounded-lg bg-purple-500/20 flex items-center justify-center font-bold text-purple-400">
+                                        {server.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-white">{server.name}</h3>
+                                        <p className="text-xs text-purple-300">Currently receiving {data?.userPlan} benefits</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="text-sm text-purple-400 font-medium">Linked Server</p>
-                                    <h3 className="text-xl font-bold text-white">{linkedServer.name}</h3>
-                                </div>
+                                <button
+                                    onClick={() => handleUnlink(server.id)}
+                                    disabled={linking}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-semibold rounded-lg transition-colors border border-red-500/20"
+                                >
+                                    {linking && selectedServer === server.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unlink className="h-4 w-4" />}
+                                    Unlink
+                                </button>
                             </div>
-                            <button
-                                onClick={handleUnlink}
-                                disabled={linking}
-                                className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold rounded-lg transition-colors border border-red-500/20"
-                            >
-                                {linking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unlink className="h-4 w-4" />}
-                                Unlink
-                            </button>
-                        </div>
+                        ))}
                     </div>
                 )}
 
@@ -164,10 +209,10 @@ export default function SubscriptionPage() {
                     <div className="p-6 border-b border-[#222]">
                         <h2 className="text-lg font-bold flex items-center gap-2">
                             <Server className="h-5 w-5 text-zinc-400" />
-                            {linkedServer ? "Change Linked Server" : "Link Your Subscription"}
+                            {linkedServers.length > 0 && !isSuperAdmin ? "Change Linked Server" : "Link Your Subscription"}
                         </h2>
                         <p className="text-zinc-400 text-sm mt-1">
-                            Select a server to receive your subscription benefits
+                            {isSuperAdmin ? "As a superadmin, you can link to an unlimited number of servers." : "Select a server to receive your subscription benefits."}
                         </p>
                     </div>
 
@@ -177,7 +222,12 @@ export default function SubscriptionPage() {
                         </div>
                     ) : (
                         <div className="divide-y divide-[#222]">
-                            {data?.servers.map((server) => (
+                            {data?.servers.map((server) => {
+                                // If they aren't superadmin and have a linked server, and this ISN'T the linked server, they can click "Link" to swap it.
+                                // If they are superadmin, they can link as many as they want.
+                                const canLink = isSuperAdmin ? !server.isLinkedToMe : true;
+
+                                return (
                                 <div
                                     key={server.id}
                                     className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
@@ -199,11 +249,11 @@ export default function SubscriptionPage() {
                                             <Check className="h-4 w-4" />
                                             Linked
                                         </span>
-                                    ) : (
+                                    ) : canLink ? (
                                         <button
                                             onClick={() => handleLink(server.id)}
-                                            disabled={linking}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-sm font-semibold rounded-lg transition-colors"
+                                            disabled={linking || !hasAnyPlan}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             {linking && selectedServer === server.id
                                                 ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -211,9 +261,9 @@ export default function SubscriptionPage() {
                                             }
                                             Link
                                         </button>
-                                    )}
+                                    ) : null}
                                 </div>
-                            ))}
+                            )})}
                         </div>
                     )}
                 </div>

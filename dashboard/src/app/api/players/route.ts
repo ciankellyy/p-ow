@@ -5,6 +5,7 @@ import { PrcClient } from "@/lib/prc"
 import { checkSecurity } from "@/lib/security"
 import { getServerConfig } from "@/lib/server-config"
 import { NextResponse } from "next/server"
+import { isServerMember } from "@/lib/admin"
 
 // Cache for player lists (30 second TTL)
 interface CacheEntry {
@@ -32,6 +33,10 @@ export async function GET(req: Request) {
     const serverId = searchParams.get("serverId")
 
     if (!serverId) return new NextResponse("Missing serverId", { status: 400 })
+
+    if (!(await isServerMember(session.user as any, serverId))) {
+        return new NextResponse("Forbidden", { status: 403 })
+    }
 
     // --- SECURITY CHECK ---
     const securityBlock = await checkSecurity(req)

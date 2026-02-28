@@ -26,11 +26,6 @@ export async function POST(req: Request) {
     const session = await getSession()
     if (!session) return new NextResponse("Unauthorized", { status: 401 })
 
-    const botToken = process.env.DISCORD_BOT_TOKEN
-    if (!botToken) {
-        return NextResponse.json({ error: "Bot token not configured" }, { status: 500 })
-    }
-
     try {
         const { serverId } = await req.json()
 
@@ -45,6 +40,11 @@ export async function POST(req: Request) {
 
         if (!server) {
             return NextResponse.json({ error: "Server not found" }, { status: 404 })
+        }
+        
+        const botToken = server?.customBotEnabled && server?.customBotToken ? server.customBotToken : process.env.DISCORD_BOT_TOKEN
+        if (!botToken) {
+            return NextResponse.json({ error: "Bot token not configured" }, { status: 500 })
         }
 
         // Use server-specific guild ID or fallback to global env var

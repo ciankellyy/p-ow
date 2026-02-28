@@ -2,9 +2,12 @@
 import { Sidebar } from "@/components/layout/sidebar"
 import { getSession } from "@/lib/auth-clerk"
 import { redirect } from "next/navigation"
+import { prisma } from "@/lib/db"
+import { isSuperAdmin } from "@/lib/admin"
 import { ClerkProvider, UserButton } from "@clerk/nextjs"
 import { DiscordRoleSyncProvider } from "@/components/providers/discord-role-sync-provider"
 import { BottomNav } from "@/components/pwa/BottomNav"
+import { UpsellBanner } from "@/components/subscription/upsell-banner"
 
 export default async function ServerDashboardLayout({
     children,
@@ -15,9 +18,41 @@ export default async function ServerDashboardLayout({
 }) {
     const session = await getSession()
 
-    if (!session) redirect("/login")
+    if (!session) {
+        redirect("/login")
+        return null
+    }
 
     const { serverId } = await params
+
+    const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        select: { subscriptionPlan: true }
+    })
+
+    // Enforce Tenant Isolation (User must be a member of this server or a Superadmin)
+    if (!isSuperAdmin(session.user as any)) {
+        // Broaden check to any possible ID the user might be registered with
+        const possibleIds = [
+            session.user.id,
+            session.user.discordId,
+            session.user.robloxId
+        ].filter(Boolean) as string[]
+
+        const isMember = await prisma.member.findFirst({
+            where: {
+                serverId: serverId,
+                OR: [
+                    { userId: { in: possibleIds } },
+                    { discordId: session.user.discordId }
+                ]
+            }
+        })
+
+        if (!isMember) {
+            redirect("/dashboard")
+        }
+    }
 
     // Enforce Discord AND Roblox Connection
     const missingDiscord = !session.user.discordId
@@ -60,6 +95,14 @@ export default async function ServerDashboardLayout({
 
                     {/* Main content with bottom padding on mobile for nav */}
                     <main className="flex-1 overflow-y-auto p-6 pb-24 md:pb-6 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+                        <UpsellBanner 
+                            serverId={serverId} 
+                            plan={server?.subscriptionPlan || 'free'} 
+                            feature="PRO_OVERVIEW"
+                            title="Supercharge your Server"
+                            description="Upgrade to Pro for Raid Detection, 5000 daily API requests, and 100 AI summaries. Go Max for Unlimited everything, White Label Bot, and Vision Access."
+                            storageKey="general_pro"
+                        />
                         {children}
                     </main>
 

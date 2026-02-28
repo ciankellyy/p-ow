@@ -70,11 +70,14 @@ export function useOcr() {
 
             const signature = await window.electronAPI.generateSignature()
 
+            // Use environment variable or fallback to production
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'https://pow.ciankelly.xyz'
+
             // Call the Vision API with timeout
             const controller = new AbortController()
             const timeoutId = setTimeout(() => controller.abort(), 10000) // 10s timeout
 
-            const response = await fetch('https://pow.ciankelly.xyz/api/vision/identify', {
+            const response = await fetch(`${API_BASE}/api/vision/identify`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -5,13 +5,16 @@ import { prisma } from "@/lib/db"
 import { isSuperAdmin } from "@/lib/admin"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { Shield, LayoutDashboard, Users, Server as ServerIcon, FileText } from "lucide-react"
+import { Shield, LayoutDashboard, Users, Server as ServerIcon, FileText, AlertTriangle, ArrowRight } from "lucide-react"
 import { EnsureDiscordConnection } from "@/components/auth/ensure-discord"
 import { PrcClient } from "@/lib/prc"
 import { RandomGreeting } from "@/components/random-greeting"
 import { DashboardFooter } from "@/components/layout/dashboard-footer"
 import { WarningBanner } from "@/components/ui/warning-banner"
-import PostHogClient from "@/lib/posthog"
+import { UpsellBanner } from "@/components/subscription/upsell-banner"
+
+import { performAutoJoin } from "@/lib/auto-join"
+import { getUserPlan } from "@/lib/subscription"
 
 // Helper to fetch stats SAFELY on server
 async function fetchServerStats(apiUrl: string) {
@@ -29,7 +32,22 @@ export default async function ServerSelectorPage() {
     const session = await getSession()
     if (!session) redirect("/login")
 
-    const servers = await prisma.server.findMany()
+    // Run Auto-Join in the background (we await it so the page reflects new servers immediately if newly joined)
+    if (session.user.discordId) {
+        try {
+            await performAutoJoin(session.user as any)
+        } catch (e) {
+            console.error("Auto-Join failed:", e)
+        }
+    }
+
+    // Tenant Isolation: Only show servers the user is specifically a Member of
+    const memberships = await prisma.member.findMany({
+        where: { userId: session.user.id },
+        include: { server: true }
+    })
+
+    let servers = memberships.map(m => m.server)
 
     // Parallel fetch for all stats
     const serversWithStats = await Promise.all(servers.map(async (s: any) => {
@@ -37,10 +55,13 @@ export default async function ServerSelectorPage() {
         return { ...s, stats }
     }))
 
-    // Check Feature Flag
-    const posthog = PostHogClient()
-    const isFormsEnabled = await posthog.isFeatureEnabled('forms', session.user.id)
-    await posthog.shutdown()
+    // Check if user has a paid subscription but hasn't linked it
+    const { plan: userPlan, linkedServerId } = await getUserPlan(session.user.id)
+    const hasUnlinkedSubscription = (userPlan === 'pow-pro-user' || userPlan === 'pow-pro' || userPlan === 'pow-max') && !linkedServerId
+
+    // Check if ANY server is free for global upsell
+    const hasFreeServer = servers.some(s => !s.subscriptionPlan || s.subscriptionPlan === 'free')
+    const firstFreeServerId = servers.find(s => !s.subscriptionPlan || s.subscriptionPlan === 'free')?.id
 
     return (
         <EnsureDiscordConnection>
@@ -66,6 +87,39 @@ export default async function ServerSelectorPage() {
                             </div>
                             <UserButton afterSignOutUrl="/" appearance={{ elements: { userButtonAvatarBox: "h-10 w-10" } }} />
                         </div>
+
+                        {/* Global Upsell */}
+                        {hasFreeServer && firstFreeServerId && (
+                            <UpsellBanner 
+                                serverId={firstFreeServerId}
+                                plan="free"
+                                feature="GLOBAL_UPSELL"
+                                title="Grow your Community"
+                                description="Free plans include basic moderation. Pro adds Raid Detection, 5000 API reqs, and 100 AI summaries. Max adds Vision Access, White Labeling, and Data Exports."
+                                storageKey="dashboard_global"
+                            />
+                        )}
+
+                        {/* Unlinked Subscription Alert */}
+                        {hasUnlinkedSubscription && (
+                            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 flex items-center justify-between animate-in slide-in-from-top-4 fade-in duration-500 shadow-lg">
+                                <div className="flex items-center gap-4">
+                                    <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                                        <AlertTriangle className="h-5 w-5 text-indigo-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-white">You have an active subscription!</h3>
+                                        <p className="text-sm text-indigo-200">You need to link your subscription to a server to apply your premium benefits.</p>
+                                    </div>
+                                </div>
+                                <Link 
+                                    href="/dashboard/subscription"
+                                    className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 flex-shrink-0"
+                                >
+                                    Link to Server <ArrowRight className="h-4 w-4" />
+                                </Link>
+                            </div>
+                        )}
 
                         {/* Servers Section */}
                         <div className="space-y-4">
@@ -131,26 +185,14 @@ export default async function ServerSelectorPage() {
                                                     <Shield className="h-4 w-4 text-emerald-400" />
                                                     Moderator Panel
                                                 </Link>
-                                                {isFormsEnabled && (
-                                                    <Link href={`/dashboard/${server.id}/forms`} className="flex items-center gap-3 rounded-lg px-2 py-2 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition-colors">
-                                                        <FileText className="h-4 w-4 text-indigo-400" />
-                                                        Forms
-                                                    </Link>
-                                                )}
+                                                <Link href={`/dashboard/${server.id}/forms`} className="flex items-center gap-3 rounded-lg px-2 py-2 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition-colors">
+                                                    <FileText className="h-4 w-4 text-indigo-400" />
+                                                    Forms
+                                                </Link>
                                             </div>
                                         </div>
                                     </div>
                                 ))}
-
-                                {/* Add Server Card (Superadmin only) */}
-                                {isSuperAdmin(session.user as any) && (
-                                    <Link href="/dashboard/settings" className="group flex min-h-[300px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-zinc-800 bg-[#111] hover:border-zinc-700 hover:bg-[#151515] transition-all">
-                                        <div className="rounded-full bg-zinc-800 p-4 transition-transform group-hover:scale-110">
-                                            <ServerIcon className="h-8 w-8 text-zinc-400" />
-                                        </div>
-                                        <p className="mt-4 font-medium text-zinc-400">Add New Server</p>
-                                    </Link>
-                                )}
                             </div>
                         </div>
 

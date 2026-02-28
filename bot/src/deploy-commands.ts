@@ -12,11 +12,6 @@ const commands = [
             sub.setName("request")
                 .setDescription("Request a Leave of Absence")
                 .addStringOption((opt: any) =>
-                    opt.setName("server")
-                        .setDescription("The server to request LOA for (or 'all' for global)")
-                        .setAutocomplete(true)
-                        .setRequired(true))
-                .addStringOption((opt: any) =>
                     opt.setName("start_date")
                         .setDescription("Start date (YYYY-MM-DD)")
                         .setRequired(true))
@@ -37,20 +32,10 @@ const commands = [
         .addSubcommand((sub: any) =>
             sub.setName("start")
                 .setDescription("Start a shift")
-                .addStringOption((opt: any) =>
-                    opt.setName("server")
-                        .setDescription("Server to start shift on")
-                        .setAutocomplete(true)
-                        .setRequired(true))
         )
         .addSubcommand((sub: any) =>
             sub.setName("end")
                 .setDescription("End your current shift")
-                .addStringOption((opt: any) =>
-                    opt.setName("server")
-                        .setDescription("Server to end shift on")
-                        .setAutocomplete(true)
-                        .setRequired(true))
         )
         .addSubcommand((sub: any) =>
             sub.setName("status")
@@ -75,11 +60,6 @@ const commands = [
         .setName("command")
         .setDescription("Execute an in-game command")
         .addStringOption((opt: any) =>
-            opt.setName("server")
-                .setDescription("Target server")
-                .setAutocomplete(true)
-                .setRequired(true))
-        .addStringOption((opt: any) =>
             opt.setName("cmd")
                 .setDescription("Command to execute (e.g. ':announce Hello')")
                 .setRequired(true)),
@@ -91,11 +71,6 @@ const commands = [
         .addSubcommand((sub: any) =>
             sub.setName("punishment")
                 .setDescription("Log a punishment against a player")
-                .addStringOption((opt: any) =>
-                    opt.setName("server")
-                        .setDescription("Server where punishment occurred")
-                        .setAutocomplete(true)
-                        .setRequired(true))
                 .addStringOption((opt: any) =>
                     opt.setName("username")
                         .setDescription("Roblox username of the player")
@@ -119,11 +94,6 @@ const commands = [
             sub.setName("view")
                 .setDescription("View logs or punishments for a Roblox user")
                 .addStringOption((opt: any) =>
-                    opt.setName("server")
-                        .setDescription("Server to view logs from")
-                        .setAutocomplete(true)
-                        .setRequired(true))
-                .addStringOption((opt: any) =>
                     opt.setName("username")
                         .setDescription("Roblox username to search for")
                         .setRequired(true))
@@ -143,12 +113,7 @@ const commands = [
     // Staff Request Command
     new SlashCommandBuilder()
         .setName("staffrequest")
-        .setDescription("Request staff assistance on a server")
-        .addStringOption((opt: any) =>
-            opt.setName("server")
-                .setDescription("Target server")
-                .setAutocomplete(true)
-                .setRequired(true))
+        .setDescription("Request staff assistance")
         .addStringOption((opt: any) =>
             opt.setName("reason")
                 .setDescription("Reason for staff request")
@@ -160,12 +125,7 @@ const commands = [
         .setDescription("Server management commands")
         .addSubcommand((sub: any) =>
             sub.setName("status")
-                .setDescription("View server status (players, staff, etc.)")
-                .addStringOption((opt: any) =>
-                    opt.setName("server")
-                        .setDescription("Server to check")
-                        .setAutocomplete(true)
-                        .setRequired(true)))
+                .setDescription("View server status (players, staff, etc.)"))
 
 ].map(c => c.toJSON())
 

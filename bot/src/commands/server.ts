@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, EmbedBuilder } from "discord.js"
 import { prisma } from "../client"
+import { resolveServer } from "../lib/server-resolve"
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://localhost:3000"
 
@@ -7,7 +8,8 @@ export async function handleServerCommand(interaction: ChatInputCommandInteracti
     const subcommand = interaction.options.getSubcommand()
 
     if (subcommand === "status") {
-        const serverId = interaction.options.getString("server", true)
+        const serverId = await resolveServer(interaction)
+        if (!serverId) return interaction.editReply({ content: "❌ You must specify a server or run this within a registered Guild." })
 
         const server = await prisma.server.findUnique({ where: { id: serverId } })
         if (!server) {

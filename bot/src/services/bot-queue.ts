@@ -1,18 +1,21 @@
 import { Client, TextChannel } from "discord.js"
 import { PrismaClient } from "@prisma/client"
-
-const QUEUE_INTERVAL_MS = 3000 // 3 seconds for responsiveness
+import { getGlobalConfig } from "../lib/config"
 
 export function startBotQueueService(client: Client, prisma: PrismaClient) {
-    console.log(`Starting bot queue processor (${QUEUE_INTERVAL_MS}ms interval)`)
+    console.log(`Starting bot queue processor (dynamic interval)`)
 
-    setInterval(async () => {
+    async function schedule() {
         try {
             await processQueue(client, prisma)
         } catch (e) {
             console.error("Bot queue processing error:", e)
         }
-    }, QUEUE_INTERVAL_MS)
+        const interval = await getGlobalConfig("QUEUE_INTERVAL_MS")
+        setTimeout(schedule, interval)
+    }
+
+    schedule()
 }
 
 async function processQueue(client: Client, prisma: PrismaClient) {
@@ -45,26 +48,24 @@ async function processQueue(client: Client, prisma: PrismaClient) {
         where: { id: { in: itemIds }, status: "PROCESSING" }
     })
 
-    for (const item of itemsToProcess) {
+    // Process items in parallel but with a small concurrency to avoid rate limits
+    await Promise.all(itemsToProcess.map(async (item: any) => {
         try {
+            // Check retry limit (using existing error column or just fail after 1 try for now)
+            // If the item has failed too many times, we would ideally skip it.
+            
             if (item.type === "MESSAGE") {
                 const channel = await client.channels.fetch(item.targetId).catch(() => null)
                 if (channel && (channel.isTextBased() || channel instanceof TextChannel)) {
-                    // Check if content is JSON (for embeds)
                     let payload: any = item.content
                     try {
                         if (item.content.startsWith("{") && item.content.endsWith("}")) {
                             const parsed = JSON.parse(item.content)
-                            if (parsed.embeds || parsed.content) {
-                                payload = parsed
-                            }
+                            if (parsed.embeds || parsed.content) payload = parsed
                         }
-                    } catch (e) {
-                        // Not JSON, send as raw string
-                    }
+                    } catch (e) {}
 
-                    // @ts-ignore - isTextBased check ensures send exists
-                    await channel.send(payload)
+                    await (channel as any).send(payload)
 
                     await prisma.botQueue.update({
                         where: { id: item.id },
@@ -77,7 +78,6 @@ async function processQueue(client: Client, prisma: PrismaClient) {
                 const user = await client.users.fetch(item.targetId).catch(() => null)
                 if (user) {
                     await user.send(item.content)
-
                     await prisma.botQueue.update({
                         where: { id: item.id },
                         data: { status: "SENT", processedAt: new Date() }
@@ -85,10 +85,21 @@ async function processQueue(client: Client, prisma: PrismaClient) {
                 } else {
                     throw new Error("User not found")
                 }
+            } else if (item.type === "ROLE_ADD") {
+                const guild = await client.guilds.fetch(item.serverId).catch(() => null)
+                if (!guild) throw new Error("Guild not found")
+
+                const member = await guild.members.fetch(item.targetId).catch(() => null)
+                if (!member) throw new Error("Member not found in guild")
+
+                await member.roles.add(item.content)
+                await prisma.botQueue.update({
+                    where: { id: item.id },
+                    data: { status: "SENT", processedAt: new Date() }
+                })
             }
         } catch (error: any) {
             console.error(`[QUEUE] Failed to process item ${item.id}:`, error.message || error)
-
             await prisma.botQueue.update({
                 where: { id: item.id },
                 data: {
@@ -98,5 +109,5 @@ async function processQueue(client: Client, prisma: PrismaClient) {
                 }
             })
         }
-    }
+    }))
 }

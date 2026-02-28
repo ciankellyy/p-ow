@@ -2,6 +2,7 @@ import { createClerkClient } from "@clerk/nextjs/server"
 import { prisma } from "@/lib/db"
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth-clerk"
+import { isServerMember } from "@/lib/admin"
 
 export async function GET(req: Request) {
     const session = await getSession()
@@ -11,6 +12,11 @@ export async function GET(req: Request) {
     const serverId = searchParams.get("serverId")
 
     if (!serverId) return new NextResponse("Missing serverId", { status: 400 })
+
+    // Verify user is a member of this server
+    if (!await isServerMember(session.user as any, serverId)) {
+        return new NextResponse("Forbidden: Access denied to this server", { status: 403 })
+    }
 
     try {
         // 1. Get active shifts

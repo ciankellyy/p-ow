@@ -3,7 +3,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, ScrollText, AlertTriangle, Clock, Settings, LogOut, Mail, CreditCard, ShieldAlert } from "lucide-react"
+import { LayoutDashboard, ScrollText, AlertTriangle, Clock, Settings, LogOut, Mail, CreditCard, ShieldAlert, Key } from "lucide-react"
 import clsx from "clsx"
 import { SignOutButton, useUser } from "@clerk/nextjs"
 
@@ -13,6 +13,7 @@ const navigation = [
     { name: "Punishments", href: "/punishments", icon: AlertTriangle },
     { name: "Shifts", href: "/shifts", icon: Clock },
     { name: "Settings", href: "/settings", icon: Settings },
+    { name: "API Keys", href: "/settings/api-keys", icon: Key },
     { name: "Invites", href: "/settings/invites", icon: Mail },
 ]
 

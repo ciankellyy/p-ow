@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db"
-import { validatePublicApiKey, findServerByName, logApiAccess } from "@/lib/public-auth"
+import { validatePublicApiKey, resolveServer, logApiAccess } from "@/lib/public-auth"
 import { PrcClient } from "@/lib/prc"
 import { NextResponse } from "next/server"
 
@@ -13,11 +13,9 @@ export async function POST(req: Request) {
     // Check searchParams first, then body
     const serverName = searchParams.get("server") || body.server || body.serverName
 
-    if (!serverName) return NextResponse.json({ error: "Missing server name. Provide as ?server= or in JSON body as 'server'" }, { status: 400 })
-
     const { reason, requester } = body
 
-    const server = await findServerByName(serverName)
+    const server = await resolveServer(auth.apiKey)
     if (!server) return NextResponse.json({ error: "Server not found" }, { status: 404 })
 
     try {

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db"
-import { validatePublicApiKey, findServerByName, logApiAccess } from "@/lib/public-auth"
+import { validatePublicApiKey, resolveServer, logApiAccess } from "@/lib/public-auth"
 import { fetchServerStats } from "@/lib/server-utils"
 import { NextResponse } from "next/server"
 
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     }
 
     // 3. Find Server
-    const server = await findServerByName(serverName)
+    const server = await resolveServer(auth.apiKey)
     if (!server) {
         return NextResponse.json({ error: "Server not found" }, { status: 404 })
     }

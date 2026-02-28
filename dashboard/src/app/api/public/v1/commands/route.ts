@@ -1,5 +1,5 @@
 import { PrcClient } from "@/lib/prc"
-import { validatePublicApiKey, findServerByName, logApiAccess } from "@/lib/public-auth"
+import { validatePublicApiKey, resolveServer, logApiAccess } from "@/lib/public-auth"
 import { NextResponse } from "next/server"
 
 export async function POST(req: Request) {
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
 
     if (!command) return NextResponse.json({ error: "Missing 'command' in body" }, { status: 400 })
 
-    const server = await findServerByName(serverName)
+    const server = await resolveServer(auth.apiKey)
     if (!server) return NextResponse.json({ error: "Server not found" }, { status: 404 })
 
     try {

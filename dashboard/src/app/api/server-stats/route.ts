@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { PrcClient } from "@/lib/prc"
 import { withMetrics } from "@/lib/api-metrics"
 import { NextResponse } from "next/server"
+import { isServerMember } from "@/lib/admin"
 
 export const GET = withMetrics("/api/server-stats", async (req: Request) => {
     const session = await getSession()
@@ -13,6 +14,10 @@ export const GET = withMetrics("/api/server-stats", async (req: Request) => {
 
     if (!serverId) {
         return NextResponse.json({ error: "Missing serverId" }, { status: 400 })
+    }
+
+    if (!(await isServerMember(session.user as any, serverId))) {
+        return new NextResponse("Forbidden", { status: 403 })
     }
 
     const server = await prisma.server.findUnique({ where: { id: serverId } })

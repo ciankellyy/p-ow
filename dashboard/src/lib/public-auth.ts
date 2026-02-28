@@ -23,7 +23,8 @@ export async function validatePublicApiKey(): Promise<PublicAuthResult> {
     const key = authHeader.replace("Bearer ", "").trim()
 
     const apiKey = await prisma.apiKey.findUnique({
-        where: { key }
+        where: { key },
+        include: { server: { select: { subscriptionPlan: true } } }
     })
 
     if (!apiKey || !apiKey.enabled) {
@@ -41,7 +42,15 @@ export async function validatePublicApiKey(): Promise<PublicAuthResult> {
         }
     }
 
-    // 2. Daily Quota Check
+    // 2. Daily Quota Check (Based on Server Plan)
+    const plan = apiKey.server.subscriptionPlan || "free"
+    const limits: Record<string, number> = {
+        "free": 100,
+        "pow-pro": 5000,
+        "pow-max": Infinity
+    }
+    const maxDaily = limits[plan] || 100
+
     let usageCount = apiKey.usageCount
     let resetAt = new Date(apiKey.resetAt)
 
@@ -51,8 +60,8 @@ export async function validatePublicApiKey(): Promise<PublicAuthResult> {
         resetAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
     }
 
-    if (usageCount >= apiKey.dailyLimit) {
-        return { valid: false, error: "Daily request quota exceeded.", status: 429 }
+    if (usageCount >= maxDaily) {
+        return { valid: false, error: `Daily request quota exceeded (${usageCount}/${maxDaily}). Upgrade your server plan for higher limits.`, status: 429 }
     }
 
     // Update state
@@ -69,23 +78,14 @@ export async function validatePublicApiKey(): Promise<PublicAuthResult> {
 }
 
 /**
- * Finds a server by its name or custom display name.
+ * Resolves the server associated with the API key, enforcing tenant isolation.
+ * Ignores any requested name to ensure the key can only access its own server.
  */
-export async function findServerByName(name: string) {
-    if (!name) return null
+export async function resolveServer(apiKey: any) {
+    if (!apiKey || !apiKey.serverId) return null
 
-    // Search by both internal name and custom name (case-insensitive if possible, though SQLite is tricky)
-    // We'll do a simple findFirst with multiple conditions
-    return await prisma.server.findFirst({
-        where: {
-            OR: [
-                { name: { equals: name } },
-                { customName: { equals: name } },
-                // Case-insensitive fallbacks
-                { name: { contains: name } },
-                { customName: { contains: name } }
-            ]
-        }
+    return await prisma.server.findUnique({
+        where: { id: apiKey.serverId }
     })
 }
 

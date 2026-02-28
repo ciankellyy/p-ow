@@ -1,10 +1,8 @@
-
 import { getSession } from "@/lib/auth-clerk"
 import { prisma } from "@/lib/db"
 import { verifyPermissionOrError } from "@/lib/auth-permissions"
 import { NextResponse } from "next/server"
 
-// Submit LOA request
 export async function POST(req: Request) {
     const session = await getSession()
     if (!session) return new NextResponse("Unauthorized", { status: 401 })
@@ -20,12 +18,19 @@ export async function POST(req: Request) {
         const permError = await verifyPermissionOrError(session.user, serverId, "canRequestLoa")
         if (permError) return permError
 
-        const userId = session.user.robloxId || session.user.discordId || session.user.id
+        const server = await prisma.server.findUnique({
+            where: { id: serverId }
+        })
 
+        if (!server) {
+            return NextResponse.json({ error: "Server not found" }, { status: 404 })
+        }
+
+        // Create the LOA record
         const loa = await prisma.leaveOfAbsence.create({
             data: {
-                userId,
                 serverId,
+                userId: session.user.id, // Consistent with Clerk ID
                 startDate: new Date(startDate),
                 endDate: new Date(endDate),
                 reason,
@@ -33,37 +38,38 @@ export async function POST(req: Request) {
             }
         })
 
-        return NextResponse.json({ success: true, loa })
-    } catch (e) {
-        return NextResponse.json({ error: "Failed to submit LOA request" }, { status: 500 })
-    }
-}
+        // Notify via bot queue if configured
+        if (server.staffRequestChannelId) {
+            const embed = {
+                embeds: [
+                    {
+                        title: "New LOA Request",
+                        color: 0xf59e0b, // Amber
+                        fields: [
+                            { name: "Staff Member", value: session.user.name || session.user.username || session.user.id, inline: true },
+                            { name: "Start Date", value: startDate, inline: true },
+                            { name: "End Date", value: endDate, inline: true },
+                            { name: "Reason", value: reason, inline: false }
+                        ],
+                        footer: { text: `ID: ${loa.id}` },
+                        timestamp: new Date().toISOString()
+                    }
+                ]
+            }
 
-// Get LOAs for a server
-export async function GET(req: Request) {
-    const session = await getSession()
-    if (!session) return new NextResponse("Unauthorized", { status: 401 })
-
-    try {
-        const { searchParams } = new URL(req.url)
-        const serverId = searchParams.get("serverId")
-
-        if (!serverId) {
-            return NextResponse.json({ error: "Missing serverId" }, { status: 400 })
+            await prisma.botQueue.create({
+                data: {
+                    serverId,
+                    type: "MESSAGE",
+                    targetId: server.staffRequestChannelId,
+                    content: JSON.stringify(embed)
+                }
+            })
         }
 
-        // Permission check - require canViewOtherShifts to view all LOAs
-        const permError = await verifyPermissionOrError(session.user, serverId, "canViewOtherShifts")
-        if (permError) return permError
-
-        const loas = await prisma.leaveOfAbsence.findMany({
-            where: { serverId },
-            orderBy: { createdAt: "desc" }
-        })
-
-        return NextResponse.json({ loas })
-    } catch (e) {
-        return NextResponse.json({ error: "Failed to fetch LOAs" }, { status: 500 })
+        return NextResponse.json({ success: true, id: loa.id })
+    } catch (e: any) {
+        console.error("[LOA POST]", e)
+        return NextResponse.json({ error: e.message || "Internal server error" }, { status: 500 })
     }
 }
-

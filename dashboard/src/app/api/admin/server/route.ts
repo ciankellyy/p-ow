@@ -23,7 +23,17 @@ export async function PATCH(req: Request) {
             permLogChannelId,
             staffRequestChannelId,
             commandLogChannelId,
-            raidAlertChannelId
+            raidAlertChannelId,
+            recruitmentChannelId,
+            congratsChannelId,
+            applicationAiThreshold,
+            autoStaffRoleId,
+            maxUploadSize,
+            staffRequestRateLimit,
+            logCacheTtl,
+            automationCacheTtl,
+            customBotToken,
+            customBotEnabled
         } = await req.json()
 
         if (!serverId) {
@@ -34,6 +44,20 @@ export async function PATCH(req: Request) {
         const hasAccess = await isServerAdmin(session.user, serverId)
         if (!hasAccess) {
             return NextResponse.json({ error: "Access denied" }, { status: 403 })
+        }
+
+        const server = await prisma.server.findUnique({ where: { id: serverId } })
+        
+        let finalBotToken = undefined
+        let finalBotEnabled = undefined
+
+        if (customBotToken !== undefined || customBotEnabled !== undefined) {
+            if (server?.subscriptionPlan === 'pow-max') {
+                if (customBotToken !== undefined) finalBotToken = customBotToken || null
+                if (customBotEnabled !== undefined) finalBotEnabled = customBotEnabled
+            } else {
+                return NextResponse.json({ error: "White Label Bot requires POW Max subscription" }, { status: 403 })
+            }
         }
 
         const updated = await prisma.server.update({
@@ -50,7 +74,17 @@ export async function PATCH(req: Request) {
                 permLogChannelId: permLogChannelId || null,
                 staffRequestChannelId: staffRequestChannelId || null,
                 commandLogChannelId: commandLogChannelId || null,
-                raidAlertChannelId: raidAlertChannelId || null
+                raidAlertChannelId: raidAlertChannelId || null,
+                recruitmentChannelId: recruitmentChannelId || null,
+                congratsChannelId: congratsChannelId || null,
+                applicationAiThreshold: applicationAiThreshold ?? 70,
+                autoStaffRoleId: autoStaffRoleId || null,
+                maxUploadSize: maxUploadSize || null,
+                staffRequestRateLimit: staffRequestRateLimit || null,
+                logCacheTtl: logCacheTtl || null,
+                automationCacheTtl: automationCacheTtl || null,
+                ...(finalBotToken !== undefined && { customBotToken: finalBotToken }),
+                ...(finalBotEnabled !== undefined && { customBotEnabled: finalBotEnabled }),
             }
         })
 

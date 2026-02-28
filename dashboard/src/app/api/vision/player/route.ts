@@ -154,7 +154,22 @@ export async function GET(req: Request) {
                 type: true,
                 reason: true,
                 createdAt: true,
-                resolved: true
+                resolved: true,
+                serverId: true
+            }
+        })
+
+        // Feature 1: Identify Active BOLOs
+        const activeBolos = await prisma.punishment.findMany({
+            where: {
+                userId: robloxIdStr,
+                type: { in: ["Ban Bolo", "Bolo"] },
+                resolved: false
+            },
+            include: {
+                server: {
+                    select: { name: true, customName: true }
+                }
             }
         })
 
@@ -164,7 +179,14 @@ export async function GET(req: Request) {
             displayName: userData.displayName,
             avatar,
             punishmentCount,
-            recentPunishments
+            recentPunishments,
+            activeBolos: activeBolos.map(b => ({
+                id: b.id,
+                reason: b.reason,
+                serverName: b.server.customName || b.server.name,
+                createdAt: b.createdAt
+            })),
+            isBoloed: activeBolos.length > 0
         }, { headers: visionCorsHeaders })
     } catch (error) {
         console.error("[Vision Player] Error:", error)

@@ -1,8 +1,7 @@
-
 import { prisma } from "@/lib/db"
 
-// The superadmin username - only this user can grant admin access
-const SUPER_ADMIN_USERNAME = process.env.SUPER_ADMIN_USERNAME || "cisaa"
+// The superadmin ID - only this user can grant admin access
+const SUPER_ADMIN_ID = "user_36ogKIU3qHTwhGT3mrVtvUrTgbW"
 
 export interface SessionUser {
     id: string
@@ -69,11 +68,22 @@ export const ALL_PERMISSIONS: RolePermissions = {
  */
 export function isSuperAdmin(user: SessionUser | null): boolean {
     if (!user) return false
+    return user.id === SUPER_ADMIN_ID
+}
 
-    // Check both username and display name against the superadmin config (case-insensitive)
-    const target = SUPER_ADMIN_USERNAME.toLowerCase()
+/**
+ * Check if the user is the owner (subscriber) of a server
+ */
+export async function isServerOwner(user: SessionUser | null, serverId: string): Promise<boolean> {
+    if (!user) return false
+    if (isSuperAdmin(user)) return true
 
-    return user.username?.toLowerCase() === target || user.name?.toLowerCase() === target
+    const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        select: { subscriberUserId: true }
+    })
+
+    return server?.subscriberUserId === user.id
 }
 
 /**
@@ -96,6 +106,29 @@ export async function isServerAdmin(user: SessionUser | null, serverId: string):
             serverId,
             userId: { in: possibleIds },
             isAdmin: true
+        }
+    })
+
+    return member !== null
+}
+
+/**
+ * Check if the user is a member of a specific server (tenant isolation)
+ */
+export async function isServerMember(user: SessionUser | null, serverId: string): Promise<boolean> {
+    if (!user) return false
+
+    // Superadmin has access to everything
+    if (isSuperAdmin(user)) return true
+
+    const possibleIds = [user.id]
+    if (user.discordId) possibleIds.push(user.discordId)
+    if (user.robloxId) possibleIds.push(user.robloxId)
+
+    const member = await prisma.member.findFirst({
+        where: {
+            serverId,
+            userId: { in: possibleIds }
         }
     })
 
@@ -126,7 +159,7 @@ export async function getUserPermissions(user: SessionUser | null, serverId: str
 
     if (!member?.role) return DEFAULT_PERMISSIONS
 
-    // Return permissions directly from role (no JSON parsing needed)
+    // Return permissions directly from role
     return {
         canShift: member.role.canShift,
         canViewOtherShifts: member.role.canViewOtherShifts,

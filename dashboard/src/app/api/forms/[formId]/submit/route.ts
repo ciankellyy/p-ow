@@ -117,15 +117,22 @@ export async function POST(
             return NextResponse.json({ error: "answers object is required" }, { status: 400 })
         }
 
+        // Validate that all question IDs belong to this form
+        const allQuestions = form.sections.flatMap((s: any) => s.questions)
+        const validQuestionIds = new Set(allQuestions.map((q: any) => q.id))
+        
+        for (const qId of Object.keys(answers)) {
+            if (!validQuestionIds.has(qId)) {
+                return NextResponse.json({ error: `Invalid question ID: ${qId}` }, { status: 400 })
+            }
+        }
+
         // Validate required questions (SKIP if saving as draft)
         if (!saveAsDraft) {
-            const allQuestions = form.sections.flatMap((s: any) => s.questions)
             const requiredQuestions = allQuestions.filter((q: any) => q.required)
-
             for (const question of requiredQuestions) {
                 const answer = answers[question.id]
                 // TODO: Also check conditional logic here to ensure we don't require hidden questions
-                // For now, simple check
                 if (answer === undefined || answer === null || answer === "") {
                     return NextResponse.json({
                         error: `Question "${question.label}" is required`,
@@ -175,35 +182,82 @@ export async function POST(
             include: { answers: true }
         })
 
-        // TODO: Send Discord notification only on FINAL submission
-        if (!saveAsDraft && form.notifyChannelId) {
-            await prisma.botQueue.create({
-                data: {
-                    serverId: form.serverId,
-                    type: "MESSAGE",
-                    targetId: form.notifyChannelId,
-                    content: JSON.stringify({
-                        embeds: [{
-                            title: `📝 New Form Submission`,
-                            description: `Someone submitted **${form.title}**`,
-                            color: 0x5865F2,
-                            fields: [
-                                {
-                                    name: "Respondent",
-                                    value: form.isAnonymous ? "Anonymous" : (session?.user.username || email || "Anonymous"),
-                                    inline: true
-                                },
-                                {
-                                    name: "Response #",
-                                    value: `${form._count.responses + 1}`,
-                                    inline: true
-                                }
-                            ],
-                            timestamp: new Date().toISOString()
-                        }]
+        // Send Discord notification only on FINAL submission
+        if (!saveAsDraft) {
+            // Feature 3: Automated Recruitment Workflow (Manual Review)
+            if (form.isApplication) {
+                try {
+                    const server = await prisma.server.findUnique({
+                        where: { id: form.serverId },
+                        select: { recruitmentChannelId: true, name: true, customName: true }
                     })
+
+                    if (server?.recruitmentChannelId) {
+                        const appSummary = allQuestions.map((q: any) => ({
+                            question: q.label,
+                            answer: answers[q.id]
+                        }))
+
+                        const embed = {
+                            embeds: [
+                                {
+                                    title: "📝 New Staff Application",
+                                    color: 0x5865F2, // Blurple
+                                    description: `**Respondent:** ${session?.user?.name || email || "Anonymous"}\n**User ID:** \`${session?.user?.id || "N/A"}\``,
+                                    fields: appSummary.slice(0, 10).map((a: any) => ({
+                                        name: a.question.substring(0, 256),
+                                        value: String(a.answer).substring(0, 1024) || "_No answer_",
+                                        inline: false
+                                    })),
+                                    footer: { text: `Form: ${form.title} • Review on Dashboard` },
+                                    timestamp: new Date().toISOString()
+                                }
+                            ]
+                        }
+
+                        await prisma.botQueue.create({
+                            data: {
+                                serverId: form.serverId,
+                                type: "MESSAGE",
+                                targetId: server.recruitmentChannelId,
+                                content: JSON.stringify(embed)
+                            }
+                        })
+                    }
+                } catch (e) {
+                    console.error("[RECRUITMENT NOTIFY ERROR]", e)
                 }
-            })
+            }
+
+            if (form.notifyChannelId) {
+                await prisma.botQueue.create({
+                    data: {
+                        serverId: form.serverId,
+                        type: "MESSAGE",
+                        targetId: form.notifyChannelId,
+                        content: JSON.stringify({
+                            embeds: [{
+                                title: `📝 New Form Submission`,
+                                description: `Someone submitted **${form.title}**`,
+                                color: 0x5865F2,
+                                fields: [
+                                    {
+                                        name: "Respondent",
+                                        value: form.isAnonymous ? "Anonymous" : (session?.user.username || email || "Anonymous"),
+                                        inline: true
+                                    },
+                                    {
+                                        name: "Response #",
+                                        value: `${form._count.responses + 1}`,
+                                        inline: true
+                                    }
+                                ],
+                                timestamp: new Date().toISOString()
+                            }]
+                        })
+                    }
+                })
+            }
         }
 
         return NextResponse.json({

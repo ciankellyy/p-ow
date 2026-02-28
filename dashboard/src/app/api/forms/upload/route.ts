@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/auth-clerk"
+import { prisma } from "@/lib/db"
+import { getServerOverride } from "@/lib/config"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
 import { randomBytes } from "crypto"
@@ -8,24 +10,33 @@ import { randomBytes } from "crypto"
 export async function POST(request: NextRequest) {
     try {
         const session = await getSession()
-        // File uploads can be from any user filling a form
-
+        
         const formData = await request.formData()
         const file = formData.get("file") as File | null
         const formId = formData.get("formId") as string | null
 
-        if (!file) {
-            return NextResponse.json({ error: "No file provided" }, { status: 400 })
+        if (!file || !formId) {
+            return NextResponse.json({ error: "Missing file or formId" }, { status: 400 })
         }
 
-        if (!formId) {
-            return NextResponse.json({ error: "formId is required" }, { status: 400 })
+        // Verify form exists and is accepting uploads
+        const form = await prisma.form.findUnique({
+            where: { id: formId },
+            select: { status: true, requiresAuth: true, serverId: true }
+        })
+
+        if (!form || form.status !== "published") {
+            return NextResponse.json({ error: "Invalid form or form is not accepting uploads" }, { status: 403 })
         }
 
-        // Validate file size (max 1GB)
-        const maxSize = 1024 * 1024 * 1024
+        if (form.requiresAuth && !session) {
+            return NextResponse.json({ error: "Authentication required for this form" }, { status: 401 })
+        }
+
+        // Validate file size using server override
+        const maxSize = await getServerOverride(form.serverId, "maxUploadSize")
         if (file.size > maxSize) {
-            return NextResponse.json({ error: "File too large (max 1GB)" }, { status: 400 })
+            return NextResponse.json({ error: `File too large (max ${Math.floor(maxSize / 1024 / 1024)}MB)` }, { status: 400 })
         }
 
         // Generate unique filename

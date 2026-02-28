@@ -1,13 +1,9 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/db'
+import { isSuperAdmin } from '@/lib/admin'
 
 export type ServerPlan = 'free' | 'pow-pro' | 'pow-max'
-export type UserPlan = 'free' | 'pow-pro-user'
-
-// Superadmin Clerk user IDs (can manually manage subscriptions)
-const SUPERADMIN_IDS = [
-    'user_36ogKIU3qHTwhGT3mrVtvUrTgbW'
-]
+export type UserPlan = 'free' | 'pow-pro-user' | 'pow-pro' | 'pow-max'
 
 export interface PlanLimits {
     forms: number
@@ -54,13 +50,6 @@ const SERVER_LIMITS: Record<ServerPlan, PlanLimits> = {
 }
 
 /**
- * Check if a user is a superadmin
- */
-export function isSuperAdmin(userId: string): boolean {
-    return SUPERADMIN_IDS.includes(userId)
-}
-
-/**
  * Get the current user's personal plan from Clerk metadata
  */
 export async function getUserPlan(userId?: string): Promise<{ plan: UserPlan, linkedServerId?: string }> {
@@ -74,8 +63,12 @@ export async function getUserPlan(userId?: string): Promise<{ plan: UserPlan, li
         const user = await clerk.users.getUser(targetUserId)
         const metadata = user.publicMetadata as any
 
+        // Accept any valid plan from metadata (in real life, populated by Clerk Billing webhooks or entitlements)
+        const validPlans = ['pow-pro-user', 'pow-pro', 'pow-max']
+        const plan = validPlans.includes(metadata?.subscriptionPlan) ? metadata.subscriptionPlan : 'free'
+
         return {
-            plan: metadata?.subscriptionPlan === 'pow-pro-user' ? 'pow-pro-user' : 'free',
+            plan: plan as UserPlan,
             linkedServerId: metadata?.linkedServerId || undefined
         }
     } catch {
@@ -159,14 +152,20 @@ export async function linkSubscriptionToServer(
     serverId: string,
     plan: 'pow-pro' | 'pow-max'
 ): Promise<{ success: boolean; error?: string }> {
-    // First, unlink any previously linked server for this user
-    await prisma.server.updateMany({
-        where: { subscriberUserId: userId },
-        data: {
-            subscriberUserId: null,
-            subscriptionPlan: null
-        }
-    })
+    
+    // Check if user is superadmin
+    const isSuper = isSuperAdmin({ id: userId } as any)
+
+    // First, unlink any previously linked server for this user ONLY if they are not a superadmin
+    if (!isSuper) {
+        await prisma.server.updateMany({
+            where: { subscriberUserId: userId },
+            data: {
+                subscriberUserId: null,
+                subscriptionPlan: null
+            }
+        })
+    }
 
     // Link the new server
     await prisma.server.update({
@@ -216,7 +215,7 @@ export async function adminGrantServerPlan(
     serverId: string,
     plan: ServerPlan
 ): Promise<{ success: boolean; error?: string }> {
-    if (!isSuperAdmin(adminUserId)) {
+    if (!isSuperAdmin({ id: adminUserId } as any)) {
         return { success: false, error: 'Unauthorized' }
     }
 
@@ -239,7 +238,7 @@ export async function adminGrantUserPlan(
     targetUserId: string,
     plan: UserPlan
 ): Promise<{ success: boolean; error?: string }> {
-    if (!isSuperAdmin(adminUserId)) {
+    if (!isSuperAdmin({ id: adminUserId } as any)) {
         return { success: false, error: 'Unauthorized' }
     }
 

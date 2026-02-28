@@ -57,8 +57,9 @@ export default async function ModPanelPage({
     // We defer the "other staff" fetching to a client component for better real-time updates
     const serverStats = await fetchServerStats(server.apiUrl)
 
-    // Fetch recent punishments for right column (GLOBAL) - Gated by canViewPunishments
+    // Fetch recent punishments for right column - Filtered by serverId to prevent leaks
     const recentPunishments = permissions.canViewPunishments ? await prisma.punishment.findMany({
+        where: { serverId },
         orderBy: { createdAt: "desc" },
         take: 50,
         select: {
@@ -73,42 +74,31 @@ export default async function ModPanelPage({
     }) : []
 
     // Build list of all possible user IDs for this user
-    // This is needed because the bot stores shifts using member.userId (Clerk ID)
-    // but the user might be identified by Discord ID, Clerk ID, or Roblox ID
-    const baseUserIds = [
-        session.user.robloxId,
+    const possibleIds = [
+        session.user.id,
         session.user.discordId,
-        session.user.id
+        session.user.robloxId
     ].filter(Boolean) as string[]
 
-    // Get Member record first to include their stored userId
-    // Try finding by userId first, then by discordId
-    let member = null
-    for (const uid of baseUserIds) {
-        member = await prisma.member.findUnique({
-            where: { userId_serverId: { userId: uid, serverId } },
-            include: { role: true }
-        })
-        if (member) break
-    }
-
-    // If not found by userId, try by discordId field
-    if (!member && session.user.discordId) {
-        member = await prisma.member.findFirst({
-            where: { discordId: session.user.discordId, serverId },
-            include: { role: true }
-        })
-    }
-
-    // Include member's userId in the list of possible IDs (if found and different)
-    const possibleUserIds = member && !baseUserIds.includes(member.userId)
-        ? [...baseUserIds, member.userId]
-        : baseUserIds
+    // Broaden member lookup: Check if 'userId' column matches ANY of our possible IDs
+    const member = await prisma.member.findFirst({
+        where: {
+            serverId,
+            OR: [
+                { userId: { in: possibleIds } },
+                { discordId: session.user.discordId }
+            ]
+        },
+        include: { role: true }
+    })
 
     // Find the current user's shift by checking all possible user IDs
+    // AND the member's specific userId if it was found and different
+    const shiftUserIds = member ? Array.from(new Set([...possibleIds, member.userId])) : possibleIds
+
     const myShift = await prisma.shift.findFirst({
         where: {
-            userId: { in: possibleUserIds },
+            userId: { in: shiftUserIds },
             endTime: null,
             serverId
         }
@@ -124,13 +114,11 @@ export default async function ModPanelPage({
     weekStart.setDate(diff)
     weekStart.setHours(0, 0, 0, 0)
 
-    // Get user ID for lookups (prefer roblox, then discord, then clerk)
-    const userId = session.user.robloxId || session.user.discordId || session.user.id
-
-    // Get shifts for all possible user IDs - across ALL servers for global quota
+    // Fix: Quota duration should be per-server for accuracy
     const weeklyShifts = await prisma.shift.findMany({
         where: {
-            userId: { in: possibleUserIds },
+            serverId,
+            userId: { in: shiftUserIds },
             startTime: { gte: weekStart },
             endTime: { not: null }
         }
@@ -141,7 +129,7 @@ export default async function ModPanelPage({
     const quotaProgress = quotaMinutes > 0 ? Math.min(100, Math.round((weeklyDurationMinutes / quotaMinutes) * 100)) : 0
 
     // Check if user is on LOA
-    const activeLoa = await getActiveLeave(userId, serverId)
+    const activeLoa = await getActiveLeave(session.user.id, serverId)
     const isOnLoa = !!activeLoa
 
     // Check if user has admin access

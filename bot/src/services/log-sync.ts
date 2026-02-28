@@ -1,25 +1,31 @@
 import { Client } from "discord.js"
+import { getGlobalConfig } from "../lib/config"
 
-const SYNC_INTERVAL_MS = 10000 // 10 seconds (Matches DB-backed Mod Panel sync)
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "http://localhost:3000"
 const INTERNAL_SECRET = process.env.INTERNAL_SYNC_SECRET!
 
 let isSyncing = false // Overlap protection
 
 export function startLogSyncService(client: Client) {
-    console.log(`Starting log sync service (${SYNC_INTERVAL_MS}ms interval)`)
+    console.log(`Starting log sync service (dynamic interval)`)
 
-    // Initial sync
-    syncLogs()
-
-    setInterval(async () => {
-        if (isSyncing) return // Skip if previous sync is still running
+    async function schedule() {
+        if (isSyncing) {
+            setTimeout(schedule, 1000)
+            return
+        }
+        
         try {
             await syncLogs()
         } catch (e) {
             console.error("Log sync service error:", e)
         }
-    }, SYNC_INTERVAL_MS)
+        
+        const interval = await getGlobalConfig("SYNC_INTERVAL_MS")
+        setTimeout(schedule, interval)
+    }
+
+    schedule()
 }
 
 async function syncLogs() {

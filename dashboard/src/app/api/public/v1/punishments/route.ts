@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db"
-import { validatePublicApiKey, findServerByName, logApiAccess } from "@/lib/public-auth"
+import { validatePublicApiKey, resolveServer, logApiAccess } from "@/lib/public-auth"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -12,7 +12,7 @@ export async function GET(req: Request) {
 
     if (!serverName) return NextResponse.json({ error: "Missing server name" }, { status: 400 })
 
-    const server = await findServerByName(serverName)
+    const server = await resolveServer(auth.apiKey)
     if (!server) return NextResponse.json({ error: "Server not found" }, { status: 404 })
 
     try {
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Missing required fields: userId, moderatorId, type" }, { status: 400 })
     }
 
-    const server = await findServerByName(serverName)
+    const server = await resolveServer(auth.apiKey)
     if (!server) return NextResponse.json({ error: "Server not found" }, { status: 404 })
 
     try {

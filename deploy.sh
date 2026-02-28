@@ -132,11 +132,8 @@ if [ ! -f "${SHARED_ENV_FILE}" ]; then
     read -p "PostHog Personal API Key - from PostHog Settings -> Personal API Keys: " POSTHOG_PERSONAL_KEY
     read -p "PostHog Project ID - number from PostHog URL e.g. 12345: " POSTHOG_PROJECT_ID
     
-    NEXTAUTH_SECRET=$(openssl rand -base64 32)
-    INTERNAL_SECRET=$(openssl rand -base64 32)
-    VISION_JWT_SECRET=$(openssl rand -base64 32)
-    # VISION_HMAC_SECRET is hardcoded to match the Vision desktop app
-    VISION_HMAC_SECRET="pow-vision-hmac-secret-2024"
+    read -p "Vision HMAC Secret (default: pow-vision-hmac-secret-2024): " VISION_HMAC_INPUT
+    VISION_HMAC_SECRET=${VISION_HMAC_INPUT:-"pow-vision-hmac-secret-2024"}
     
     # Write to the shared .env file
     cat > "${SHARED_ENV_FILE}" <<EOL
@@ -217,13 +214,10 @@ else
     fi
     
     # VISION_HMAC_SECRET must match the hardcoded value in the Vision desktop app
-    CORRECT_HMAC="pow-vision-hmac-secret-2024"
     if ! grep -q "VISION_HMAC_SECRET=" "${SHARED_ENV_FILE}"; then
-        echo "Adding missing VISION_HMAC_SECRET..."
-        echo "VISION_HMAC_SECRET=\"${CORRECT_HMAC}\"" >> "${SHARED_ENV_FILE}"
-    elif ! grep -q "VISION_HMAC_SECRET=\"${CORRECT_HMAC}\"" "${SHARED_ENV_FILE}"; then
-        echo "Updating VISION_HMAC_SECRET to match Vision app..."
-        sed -i "s|^VISION_HMAC_SECRET=.*|VISION_HMAC_SECRET=\"${CORRECT_HMAC}\"|" "${SHARED_ENV_FILE}"
+        read -p "Missing Vision HMAC Secret (default: pow-vision-hmac-secret-2024): " VISION_HMAC_INPUT
+        VAL=${VISION_HMAC_INPUT:-"pow-vision-hmac-secret-2024"}
+        echo "VISION_HMAC_SECRET=\"$VAL\"" >> "${SHARED_ENV_FILE}"
     fi
     
     # Discord Config

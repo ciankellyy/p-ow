@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import { Plus, FileText, BarChart3, Users, Settings, Eye, EyeOff, Clock, ExternalLink } from "lucide-react"
 import { isServerAdmin } from "@/lib/admin"
+import { UpsellBanner } from "@/components/subscription/upsell-banner"
 
 export default async function FormsPage({
     params,
@@ -39,7 +40,7 @@ export default async function FormsPage({
 
     const server = await prisma.server.findUnique({
         where: { id: serverId },
-        select: { name: true, customName: true }
+        select: { name: true, customName: true, subscriptionPlan: true }
     })
 
     return (
@@ -51,6 +52,15 @@ export default async function FormsPage({
             </div>
 
             <div className="max-w-6xl mx-auto px-6 pb-6 space-y-6 flex-1 w-full">
+                <UpsellBanner 
+                    serverId={serverId} 
+                    plan={server?.subscriptionPlan || 'free'} 
+                    feature="FORMS_PRO"
+                    title="Scale your Recruitment"
+                    description="Free servers are limited to 5 active forms. POW Pro increases this to 25, and POW Max offers unlimited forms for your entire community."
+                    storageKey="forms_pro"
+                />
+                
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>

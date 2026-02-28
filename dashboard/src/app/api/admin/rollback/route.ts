@@ -4,7 +4,8 @@ import { prisma } from "@/lib/db"
 import { isSuperAdmin } from "@/lib/admin"
 import { NextResponse } from "next/server"
 import { RollbackService } from "@/lib/rollback-service"
-// import { queueCommand } from "@/lib/cross-server-sync"
+import { PrcClient } from "@/lib/prc"
+import { getServerConfig } from "@/lib/server-config"
 
 export async function POST(req: Request) {
     const session = await getSession()
@@ -57,16 +58,20 @@ export async function POST(req: Request) {
         const logsForService = logs.map((l: any) => ({ id: l.id, command: l.command || "" }))
         const reversals = service.calculateReversals(logsForService)
 
-        // 3. Queue Reversals
-        for (const reversal of reversals) {
-            // TODO: Re-implement using PrcClient or new queue system
-            // await queueCommand(
-            //     serverId,
-            //     reversal.command,
-            //     10, // High priority
-            //     serverId,
-            //     targetUserId
-            // )
+        // 3. Execute Reversals
+        if (reversals.length > 0) {
+            const config = await getServerConfig(serverId)
+            if (config) {
+                const prc = new PrcClient(config.apiUrl)
+                // Execute in small batches to respect rate limits
+                for (const reversal of reversals) {
+                    await prc.executeCommand(reversal.command).catch(e => {
+                        console.error(`[ROLLBACK] Reversal failed: ${reversal.command}`, e)
+                    })
+                    // Tiny sleep between commands
+                    await new Promise(r => setTimeout(r, 200))
+                }
+            }
         }
 
         // 4. Log the Rollback Action (Security Log)

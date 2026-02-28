@@ -1,7 +1,7 @@
 import { PrcServer, PrcPlayer, PrcJoinLog, PrcKillLog, PrcCommandLog } from "./prc-types"
 import { trackApiCall } from "./metrics"
+import { getGlobalConfig } from "./config"
 
-const BASE_URL = "https://api.policeroleplay.community/v1"
 const DEFAULT_WEBHOOK_URL = process.env.DISCORD_PUNISHMENT_WEBHOOK
 
 // Rate limit state per server key
@@ -31,10 +31,17 @@ function getKeyHash(apiKey: string): string {
 export class PrcClient {
     private apiKey: string
     private keyHash: string
+    private baseUrl: string | null = null
 
     constructor(apiKey: string) {
         this.apiKey = apiKey
         this.keyHash = getKeyHash(apiKey)
+    }
+
+    private async getBaseUrl() {
+        if (this.baseUrl) return this.baseUrl
+        this.baseUrl = await getGlobalConfig("PRC_BASE_URL")
+        return this.baseUrl
     }
 
     private getState(): RateLimitState {
@@ -49,161 +56,112 @@ export class PrcClient {
         return rateLimitStates.get(this.keyHash)!
     }
 
-    private updateState(headers: Headers, retryAfter?: number) {
-        const state = this.getState()
-        const remaining = headers.get("X-RateLimit-Remaining")
-        const reset = headers.get("X-RateLimit-Reset")
-
-        if (remaining !== null) state.remaining = parseInt(remaining, 10)
-        if (reset !== null) state.resetTime = parseInt(reset, 10) * 1000
-
-        if (retryAfter !== undefined) {
-            state.blockedUntil = Date.now() + (retryAfter * 1000)
-            if (Date.now() - state.lastWebhookTime > 120000) {
-                this.sendRateLimitWebhook(retryAfter)
-                state.lastWebhookTime = Date.now()
-            }
-        }
-    }
-
-    private async sendRateLimitWebhook(retryAfter: number) {
-        const webhookUrl = (globalThis as any).process?.env?.PRC_RATE_LIMIT_WEBHOOK || DEFAULT_WEBHOOK_URL
-        if (!webhookUrl) return
-
-        const waitString = `${Math.floor(retryAfter / 60)}m ${retryAfter % 60}s`
-        try {
-            await fetch(webhookUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    embeds: [{
-                        title: "🚨 PRC API Rate Limited",
-                        description: `The application has been rate limited by the PRC API.\n\n**Wait Time:** \`${waitString}\` (${retryAfter}s)`,
-                        color: 15548997,
-                        timestamp: new Date().toISOString(),
-                        fields: [{ name: "Key Hash", value: `\`...${this.keyHash}\``, inline: true }]
-                    }]
-                })
-            })
-        } catch (e) {
-            console.error("[PRC] Failed to send rate limit webhook:", e)
-        }
+    private updateState(state: Partial<RateLimitState>) {
+        const current = this.getState()
+        rateLimitStates.set(this.keyHash, { ...current, ...state })
     }
 
     private async waitIfNeeded(): Promise<void> {
         const state = this.getState()
         const now = Date.now()
 
+        // 1. Check if we are in a hard block (429)
         if (state.blockedUntil > now) {
             const waitTime = state.blockedUntil - now
-            await new Promise(resolve => setTimeout(resolve, waitTime))
+            await new Promise(resolve => setTimeout(resolve, waitTime + 100))
+        }
+
+        // 2. Check if we reached the bucket limit (35 req/sec)
+        // If resetTime passed, reset the bucket
+        if (now > state.resetTime) {
+            this.updateState({ remaining: 35, resetTime: now + 1000 })
             return
         }
 
-        if (state.remaining <= 0 && state.resetTime > now) {
-            const waitTime = state.resetTime - now + 100
-            if (waitTime > 60000 && now - state.lastWebhookTime > 300000) {
-                this.sendRateLimitWebhook(Math.ceil(waitTime / 1000))
-                state.lastWebhookTime = now
-            }
-            await new Promise(resolve => setTimeout(resolve, waitTime))
-            state.remaining = 35
+        // If no requests left, wait for reset
+        if (state.remaining <= 0) {
+            const waitTime = state.resetTime - now
+            await new Promise(resolve => setTimeout(resolve, waitTime + 100))
+            this.updateState({ remaining: 35, resetTime: Date.now() + 1000 })
         }
     }
 
-    // Queued fetch — used for background sync to respect rate limits
-    private async fetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-        const currentQueue = requestQueues.get(this.keyHash) || Promise.resolve()
-        const thisRequest = currentQueue.then(async () => this.doFetch<T>(endpoint, options))
-        requestQueues.set(this.keyHash, thisRequest.catch(() => { }))
-        return thisRequest
-    }
-
-    // Direct fetch — bypasses queue for user-initiated actions (commands)
+    /**
+     * Serialized fetch to ensure rate limits are respected across concurrent calls
+     */
     private async fetchDirect<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-        return this.doFetch<T>(endpoint, options)
+        const currentQueue = requestQueues.get(this.keyHash) || Promise.resolve()
+        
+        const thisRequest = currentQueue.then(() => this.doFetch<T>(endpoint, options))
+        requestQueues.set(this.keyHash, thisRequest.catch(() => { }))
+        
+        return thisRequest
     }
 
     private async doFetch<T>(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<T> {
         const MAX_RETRIES = 3
         await this.waitIfNeeded()
 
+        const baseUrl = await this.getBaseUrl()
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 8000)
         const startTime = Date.now()
 
         try {
-            const res = await fetch(`${BASE_URL}${endpoint}`, {
+            const res = await fetch(`${baseUrl}${endpoint}`, {
                 ...options,
                 headers: { "Server-Key": this.apiKey, ...options.headers },
                 signal: controller.signal
             })
 
-            clearTimeout(timeoutId)
-            this.updateState(res.headers)
+            const duration = Date.now() - startTime
+            trackApiCall("prc", endpoint, duration, res.ok ? "ok" : "error", undefined, undefined, res.status)
+
+            // Update remaining requests from headers
+            const remaining = res.headers.get("X-RateLimit-Remaining")
+            if (remaining) {
+                this.updateState({ remaining: parseInt(remaining) })
+            }
+
+            if (res.status === 429) {
+                const retryAfter = parseInt(res.headers.get("Retry-After") || "2")
+                this.updateState({ blockedUntil: Date.now() + (retryAfter * 1000) })
+                
+                if (retryCount < MAX_RETRIES) {
+                    return this.doFetch<T>(endpoint, options, retryCount + 1)
+                }
+                throw new Error("PRC API Rate Limit Exceeded")
+            }
 
             if (!res.ok) {
-                if (res.status === 429) {
-                    let retryAfter = 5
-                    try {
-                        const body = await res.json()
-                        retryAfter = body.retry_after || 5
-                    } catch (e) { }
-
-                    this.updateState(res.headers, retryAfter)
-                    if (retryCount < MAX_RETRIES) {
-                        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000))
-                        return this.doFetch<T>(endpoint, options, retryCount + 1)
-                    }
-                    trackApiCall("prc", endpoint, Date.now() - startTime, "error", "Rate Limited", { server_id: this.keyHash }, 429)
-                    throw new Error("Rate Limited")
-                }
-                if (res.status === 403) {
-                    trackApiCall("prc", endpoint, Date.now() - startTime, "error", "Invalid API Key", { server_id: this.keyHash }, 403)
-                    throw new Error("Invalid API Key")
-                }
-                trackApiCall("prc", endpoint, Date.now() - startTime, "error", res.statusText, { server_id: this.keyHash }, res.status)
-                throw new Error(`PRC API Error: ${res.statusText}`)
+                const text = await res.text()
+                throw new Error(`PRC API Error (${res.status}): ${text}`)
             }
 
-            trackApiCall("prc", endpoint, Date.now() - startTime, "ok", undefined, { server_id: this.keyHash }, res.status)
-
-            const text = await res.text()
-            try {
-                return text ? JSON.parse(text) : {} as T
-            } catch (e) {
-                console.error("[PRC] Failed to parse JSON:", text)
-                return {} as T
-            }
-        } catch (error: any) {
+            return await res.json() as T
+        } finally {
             clearTimeout(timeoutId)
-            if (error.name === 'AbortError') {
-                trackApiCall("prc", endpoint, Date.now() - startTime, "timeout", "PRC API Timeout", { server_id: this.keyHash }, 408)
-                throw new Error("PRC API Timeout")
-            }
-            trackApiCall("prc", endpoint, Date.now() - startTime, "error", error.message, { server_id: this.keyHash }, 500)
-            throw error
         }
     }
 
     async getServer(): Promise<PrcServer> {
-        return this.fetch<PrcServer>("/server")
+        return this.fetchDirect<PrcServer>("/server")
     }
 
     async getPlayers(): Promise<PrcPlayer[]> {
-        return this.fetch<PrcPlayer[]>("/server/players")
+        return this.fetchDirect<PrcPlayer[]>("/server/players")
     }
 
     async getJoinLogs(): Promise<PrcJoinLog[]> {
-        return this.fetch<PrcJoinLog[]>("/server/joinlogs")
+        return this.fetchDirect<PrcJoinLog[]>("/server/joinlogs")
     }
 
     async getKillLogs(): Promise<PrcKillLog[]> {
-        return this.fetch<PrcKillLog[]>("/server/killlogs")
+        return this.fetchDirect<PrcKillLog[]>("/server/killlogs")
     }
 
     async getCommandLogs(): Promise<PrcCommandLog[]> {
-        return this.fetch<PrcCommandLog[]>("/server/commandlogs")
+        return this.fetchDirect<PrcCommandLog[]>("/server/commandlogs")
     }
 
     async executeCommand(command: string): Promise<any> {

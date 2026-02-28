@@ -2,16 +2,16 @@ import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { prisma } from "@/lib/db"
 import {
-    isSuperAdmin,
     adminGrantServerPlan,
     adminGrantUserPlan
 } from "@/lib/subscription"
+import { isSuperAdmin } from "@/lib/admin"
 
 // Get all servers with their subscription status
 export async function GET() {
     try {
         const { userId } = await auth()
-        if (!userId || !isSuperAdmin(userId)) {
+        if (!userId || !isSuperAdmin({ id: userId } as any)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
         }
 
@@ -49,7 +49,7 @@ export async function GET() {
 export async function POST(req: Request) {
     try {
         const { userId } = await auth()
-        if (!userId || !isSuperAdmin(userId)) {
+        if (!userId || !isSuperAdmin({ id: userId } as any)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
         }
 

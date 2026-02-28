@@ -165,3 +165,8 @@ vision/.DS_Store
 dashboard/prisma/dev.db
 dashboard/data/uploads/
 check_quotes.py
+
+.gemini/
+gha-creds-*.json
+Escolta Reina \[cO28Hxir6xg\].mp3
+/.github

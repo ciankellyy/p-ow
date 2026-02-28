@@ -1,38 +1,51 @@
 import { prisma } from "@/lib/db"
 import { getSession } from "@/lib/auth-clerk"
-import { isSuperAdmin } from "@/lib/admin"
+import { isServerAdmin } from "@/lib/admin"
 import { NextResponse } from "next/server"
+import crypto from "crypto"
 
-export async function GET() {
+export async function GET(req: Request) {
     const session = await getSession()
-    if (!isSuperAdmin(session?.user as any)) {
+    const { searchParams } = new URL(req.url)
+    const serverId = searchParams.get("serverId")
+
+    if (!serverId || !await isServerAdmin(session?.user as any, serverId)) {
         return new NextResponse("Unauthorized", { status: 401 })
     }
 
     const keys = await prisma.apiKey.findMany({
+        where: { serverId },
         orderBy: { createdAt: "desc" }
     })
 
-    return NextResponse.json(keys)
+    // Mask the secret key to prevent exposure in the dashboard after creation
+    const maskedKeys = keys.map(k => ({
+        ...k,
+        key: `${k.key.substring(0, 8)}...${k.key.substring(k.key.length - 4)}`
+    }))
+
+    return NextResponse.json(maskedKeys)
 }
 
 export async function POST(req: Request) {
     const session = await getSession()
-    if (!isSuperAdmin(session?.user as any)) {
+    const { name, serverId } = await req.json()
+    
+    if (!serverId || !await isServerAdmin(session?.user as any, serverId)) {
         return new NextResponse("Unauthorized", { status: 401 })
     }
 
-    const { name } = await req.json()
     if (!name) return new NextResponse("Name is required", { status: 400 })
 
-    // Generate a secure key
-    const rawKey = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+    // Generate a cryptographically secure key
+    const rawKey = crypto.randomBytes(24).toString("hex")
     const key = `pow_${rawKey}`
 
     const apiKey = await prisma.apiKey.create({
         data: {
             name,
             key,
+            serverId,
             enabled: true
         }
     })
@@ -42,17 +55,18 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
     const session = await getSession()
-    if (!isSuperAdmin(session?.user as any)) {
+    const { searchParams } = new URL(req.url)
+    const id = searchParams.get("id")
+    const serverId = searchParams.get("serverId")
+
+    if (!serverId || !await isServerAdmin(session?.user as any, serverId)) {
         return new NextResponse("Unauthorized", { status: 401 })
     }
 
-    const { searchParams } = new URL(req.url)
-    const id = searchParams.get("id")
-
     if (!id) return new NextResponse("ID is required", { status: 400 })
 
-    await prisma.apiKey.delete({
-        where: { id }
+    await prisma.apiKey.deleteMany({
+        where: { id, serverId } // Ensure they only delete from their own server
     })
 
     return NextResponse.json({ success: true })
@@ -60,11 +74,12 @@ export async function DELETE(req: Request) {
 
 export async function PATCH(req: Request) {
     const session = await getSession()
-    if (!isSuperAdmin(session?.user as any)) {
+    const { id, serverId, enabled, rateLimit, dailyLimit } = await req.json()
+    
+    if (!serverId || !await isServerAdmin(session?.user as any, serverId)) {
         return new NextResponse("Unauthorized", { status: 401 })
     }
 
-    const { id, enabled, rateLimit, dailyLimit } = await req.json()
     if (!id) return new NextResponse("ID is required", { status: 400 })
 
     const data: any = {}
@@ -72,8 +87,8 @@ export async function PATCH(req: Request) {
     if (typeof rateLimit === "number") data.rateLimit = rateLimit
     if (typeof dailyLimit === "number") data.dailyLimit = dailyLimit
 
-    const apiKey = await prisma.apiKey.update({
-        where: { id },
+    const apiKey = await prisma.apiKey.updateMany({
+        where: { id, serverId }, // Ensure they only edit keys on their server
         data
     })
 

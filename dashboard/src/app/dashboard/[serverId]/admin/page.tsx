@@ -1,11 +1,12 @@
-
 import { getSession } from "@/lib/auth-clerk"
 import { prisma } from "@/lib/db"
-import { isSuperAdmin } from "@/lib/admin"
+import { isSuperAdmin, isServerOwner } from "@/lib/admin"
+import { isServerFeatureEnabled } from "@/lib/feature-flags"
 import { redirect } from "next/navigation"
 import { Settings, Upload, Users } from "lucide-react"
 import { ServerSettingsForm } from "./server-settings-form"
 import { AdminAccessManager } from "./admin-access-manager"
+import { DataExportsPanel } from "@/components/admin/data-exports-panel"
 
 export default async function AdminGeneralPage({ params }: { params: Promise<{ serverId: string }> }) {
     const session = await getSession()
@@ -22,11 +23,21 @@ export default async function AdminGeneralPage({ params }: { params: Promise<{ s
     }
 
     const superAdmin = isSuperAdmin(session.user)
+    const isOwner = await isServerOwner(session.user as any, serverId)
+
+    // Get all members for owner transfer
+    const members = isOwner ? await prisma.member.findMany({
+        where: { serverId },
+        select: { userId: true, discordId: true }
+    }) : []
 
     // Get all admins for this server
     const admins = await prisma.member.findMany({
         where: { serverId, isAdmin: true }
     })
+    
+    // Check export feature
+    const hasExportAccess = await isServerFeatureEnabled('EXPORTS', serverId)
 
     return (
         <div className="space-y-8">
@@ -58,9 +69,25 @@ export default async function AdminGeneralPage({ params }: { params: Promise<{ s
                         currentStaffRequestChannelId={server.staffRequestChannelId}
                         currentRaidAlertChannelId={server.raidAlertChannelId}
                         currentCommandLogChannelId={server.commandLogChannelId}
+                        currentCustomBotToken={server.customBotToken}
+                        currentCustomBotEnabled={server.customBotEnabled}
+                        subscriptionPlan={server.subscriptionPlan}
+                        currentMaxUploadSize={server.maxUploadSize}
+                        currentStaffRequestRateLimit={server.staffRequestRateLimit}
+                        currentLogCacheTtl={server.logCacheTtl}
+                        currentAutomationCacheTtl={server.automationCacheTtl}
+                        currentRecruitmentChannelId={server.recruitmentChannelId}
+                        currentCongratsChannelId={server.congratsChannelId}
+                        currentApplicationAiThreshold={server.applicationAiThreshold}
+                        currentAutoStaffRoleId={server.autoStaffRoleId}
+                        isOwner={isOwner}
+                        serverMembers={members}
                     />
                 </div>
             </div>
+            
+            {/* Data Exports */}
+            <DataExportsPanel serverId={serverId} hasExportAccess={hasExportAccess} />
 
             {/* Admin Access - Only visible to superadmin */}
             {superAdmin && (

@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, EmbedBuilder } from "discord.js"
 import { prisma } from "../client"
+import { resolveServer } from "../lib/server-resolve"
 import { findMemberByDiscordId } from "../lib/clerk"
 import { PrcClient } from "../lib/prc"
 
@@ -11,7 +12,8 @@ export async function handleShiftCommand(interaction: ChatInputCommandInteractio
     await interaction.deferReply({ ephemeral: true })
 
     if (subcommand === "start") {
-        const serverId = interaction.options.getString("server", true)
+        const serverId = await resolveServer(interaction)
+        if (!serverId) return interaction.editReply({ content: "❌ You must specify a server or run this within a registered Guild." })
 
         // Find member using Clerk lookup
         const member = await findMemberByDiscordId(prisma, discordId, serverId)
@@ -74,7 +76,8 @@ export async function handleShiftCommand(interaction: ChatInputCommandInteractio
         await interaction.editReply({ embeds: [embed] })
 
     } else if (subcommand === "end") {
-        const serverId = interaction.options.getString("server", true)
+        const serverId = await resolveServer(interaction)
+        if (!serverId) return interaction.editReply({ content: "❌ You must specify a server or run this within a registered Guild." })
 
         // Find member using Clerk lookup
         const member = await findMemberByDiscordId(prisma, discordId, serverId)

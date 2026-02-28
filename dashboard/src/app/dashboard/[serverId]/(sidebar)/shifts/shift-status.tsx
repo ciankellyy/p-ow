@@ -16,9 +16,12 @@ export function ShiftStatus({ serverId, initialActive, initialStartTime, disable
     const [startTime, setStartTime] = useState<Date | null>(initialStartTime ? new Date(initialStartTime) : null)
     const [elapsed, setElapsed] = useState("")
 
-    // Poll for shift status every 3 seconds
+    // Optimization 5: Intelligent Polling with Visibility Check
     useEffect(() => {
         const checkStatus = async () => {
+            // Only poll if tab is active
+            if (document.visibilityState !== 'visible') return
+
             try {
                 const res = await fetch(`/api/shifts/status?serverId=${serverId}`)
                 if (res.ok) {
@@ -26,13 +29,19 @@ export function ShiftStatus({ serverId, initialActive, initialStartTime, disable
                     setIsActive(data.active)
                     setStartTime(data.shift?.startTime ? new Date(data.shift.startTime) : null)
                 }
-            } catch (e) {
-                // Ignore errors
-            }
+            } catch (e) {}
         }
 
-        const pollInterval = setInterval(checkStatus, 1000)
-        return () => clearInterval(pollInterval)
+        // Poll every 10 seconds instead of 1 second
+        const pollInterval = setInterval(checkStatus, 10000)
+        
+        // Also check on focus
+        window.addEventListener('focus', checkStatus)
+        
+        return () => {
+            clearInterval(pollInterval)
+            window.removeEventListener('focus', checkStatus)
+        }
     }, [serverId])
 
     // Update elapsed time every second when active

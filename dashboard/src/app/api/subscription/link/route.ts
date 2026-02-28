@@ -6,6 +6,7 @@ import {
     getServersForLinking,
     getUserPlan
 } from "@/lib/subscription"
+import { isSuperAdmin } from "@/lib/admin"
 
 // Get servers available for linking
 export async function GET() {
@@ -17,11 +18,13 @@ export async function GET() {
 
         const userPlan = await getUserPlan(userId)
         const servers = await getServersForLinking(userId)
+        const isSuper = isSuperAdmin({ id: userId } as any)
 
         return NextResponse.json({
-            userPlan: userPlan.plan,
+            userPlan: isSuper ? 'pow-max' : userPlan.plan,
             linkedServerId: userPlan.linkedServerId,
-            servers
+            servers,
+            isSuperAdmin: isSuper
         })
     } catch (error) {
         console.error("[Subscription Link] GET Error:", error)
@@ -47,9 +50,19 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Invalid plan" }, { status: 400 })
         }
 
-        // Verify user has this subscription (via Clerk billing)
-        // For now, trust the frontend - in production you'd verify with Clerk billing API
-        const result = await linkSubscriptionToServer(userId, serverId, plan)
+        const isSuper = isSuperAdmin({ id: userId } as any)
+
+        // Verify user has this subscription (or is superadmin)
+        if (!isSuper) {
+            const userPlan = await getUserPlan(userId)
+            
+            // If they are linking pow-pro or pow-max, they must own it.
+            if (userPlan.plan !== plan && userPlan.plan !== 'pow-max') {
+                return NextResponse.json({ error: `You do not have an active ${plan} subscription to link.` }, { status: 403 })
+            }
+        }
+
+        const result = await linkSubscriptionToServer(userId, serverId, plan as any)
 
         if (!result.success) {
             return NextResponse.json({ error: result.error }, { status: 400 })
@@ -63,14 +76,30 @@ export async function POST(req: Request) {
 }
 
 // Unlink subscription from server
-export async function DELETE() {
+export async function DELETE(req: Request) {
     try {
         const { userId } = await auth()
         if (!userId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
         }
 
-        await unlinkSubscription(userId)
+        const { searchParams } = new URL(req.url)
+        const serverId = searchParams.get("serverId")
+
+        if (serverId) {
+            // Superadmin or normal user specifically unlinking one server
+            const { prisma } = await import("@/lib/db")
+            await prisma.server.update({
+                where: { id: serverId, subscriberUserId: userId },
+                data: {
+                    subscriberUserId: null,
+                    subscriptionPlan: null
+                }
+            }).catch(() => {}) // Ignore if not found or not owned by them
+        } else {
+            // Legacy behavior: unlink all (used by normal users)
+            await unlinkSubscription(userId)
+        }
 
         return NextResponse.json({ success: true })
     } catch (error) {

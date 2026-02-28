@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/auth-clerk"
 import { prisma } from "@/lib/db"
-import { isServerAdmin } from "@/lib/admin"
+import { isServerAdmin, isServerMember } from "@/lib/admin"
 
 // GET /api/forms?serverId=xxx - List forms for a server
 export async function GET(request: NextRequest) {
@@ -16,6 +16,11 @@ export async function GET(request: NextRequest) {
 
         if (!serverId) {
             return NextResponse.json({ error: "serverId is required" }, { status: 400 })
+        }
+
+        // Verify user is a member of this server
+        if (!await isServerMember(session.user as any, serverId)) {
+            return new NextResponse("Forbidden: Access denied to this server", { status: 403 })
         }
 
         // Check if user has access to this server (any member or admin)
@@ -91,9 +96,9 @@ export async function POST(request: NextRequest) {
 
         // Check subscription form limit
         const { checkLimit } = await import("@/lib/subscription")
-        const { isFeatureEnabled } = await import("@/lib/feature-flags")
+        const { isServerFeatureEnabled } = await import("@/lib/feature-flags")
 
-        const limitsEnabled = await isFeatureEnabled('FORMS_LIMIT_CHECK')
+        const limitsEnabled = await isServerFeatureEnabled('FORMS_LIMIT_CHECK', serverId)
         if (limitsEnabled) {
             const { allowed, current, max } = await checkLimit(serverId, 'forms')
             if (!allowed) {

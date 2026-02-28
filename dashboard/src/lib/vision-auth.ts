@@ -32,10 +32,14 @@ export function verifyVisionSignature(header: string | null): boolean {
         .digest('hex')
 
     // Constant-time comparison to prevent timing attacks
-    return crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expectedSig)
-    )
+    const sigBuffer = Buffer.from(signature)
+    const expectedBuffer = Buffer.from(expectedSig)
+
+    if (sigBuffer.length !== expectedBuffer.length) {
+        return false
+    }
+
+    return crypto.timingSafeEqual(sigBuffer, expectedBuffer)
 }
 
 export const visionCorsHeaders = {

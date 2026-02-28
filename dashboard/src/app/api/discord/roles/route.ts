@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/auth-clerk"
 import { prisma } from "@/lib/db"
 import { NextResponse } from "next/server"
+import { isServerMember } from "@/lib/admin"
 
 export async function GET(req: Request) {
     const session = await getSession()
@@ -11,20 +12,24 @@ export async function GET(req: Request) {
 
     if (!serverId) return new NextResponse("Missing serverId", { status: 400 })
 
-    const botToken = process.env.DISCORD_BOT_TOKEN
-    if (!botToken) {
-        return NextResponse.json({ error: "Bot token not configured" }, { status: 500 })
+    if (!(await isServerMember(session.user as any, serverId))) {
+        return new NextResponse("Forbidden", { status: 403 })
     }
 
     try {
-        // Get server's Discord Guild ID
+        // Get server's Discord Guild ID and bot settings
         const server = await prisma.server.findUnique({
             where: { id: serverId },
-            select: { discordGuildId: true }
+            select: { discordGuildId: true, customBotToken: true, customBotEnabled: true }
         })
 
         if (!server) {
             return NextResponse.json({ error: "Server not found" }, { status: 404 })
+        }
+
+        const botToken = server?.customBotEnabled && server?.customBotToken ? server.customBotToken : process.env.DISCORD_BOT_TOKEN
+        if (!botToken) {
+            return NextResponse.json({ error: "Bot token not configured" }, { status: 500 })
         }
 
         // Use server-specific guild ID or fallback to global env var
@@ -36,13 +41,13 @@ export async function GET(req: Request) {
 
         // Fetch roles from Discord API
         const rolesRes = await fetch(
-            `https://discord.com/api/v10/guilds/${server.discordGuildId}/roles`,
+            `https://discord.com/api/v10/guilds/${guildId}/roles`,
             {
                 headers: {
                     Authorization: `Bot ${botToken}`
                 },
-                next: { revalidate: 60 } // Cache for 1 minute
-            }
+                next: { revalidate: 60 }
+            } as any
         )
 
         if (!rolesRes.ok) {

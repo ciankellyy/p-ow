@@ -136,7 +136,9 @@ function App() {
             // Generate HMAC signature
             const signature = await window.electronAPI.generateSignature()
 
-            const res = await fetch(`https://pow.ciankelly.xyz/api/vision/player?username=${encodeURIComponent(username)}`, {
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'https://pow.ciankelly.xyz'
+
+            const res = await fetch(`${API_BASE}/api/vision/player?username=${encodeURIComponent(username)}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'X-Vision-Sig': signature

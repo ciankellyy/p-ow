@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, EmbedBuilder } from "discord.js"
 import { prisma } from "../client"
+import { resolveServer } from "../lib/server-resolve"
 import { findMemberByDiscordId } from "../lib/clerk"
 import { getRobloxId } from "../lib/roblox"
 
@@ -16,7 +17,8 @@ export async function handlePunishCommand(interaction: ChatInputCommandInteracti
 }
 
 async function handleLogPunishment(interaction: ChatInputCommandInteraction) {
-    const serverId = interaction.options.getString("server", true)
+    const serverId = await resolveServer(interaction)
+    if (!serverId) return interaction.editReply({ content: "❌ You must specify a server or run this within a registered Guild." })
     const username = interaction.options.getString("username", true)
     const type = interaction.options.getString("type", true)
     const reason = interaction.options.getString("reason", true)
@@ -64,7 +66,8 @@ async function handleLogPunishment(interaction: ChatInputCommandInteraction) {
 }
 
 async function handleLogView(interaction: ChatInputCommandInteraction) {
-    const serverId = interaction.options.getString("server", true)
+    const serverId = await resolveServer(interaction)
+    if (!serverId) return interaction.editReply({ content: "❌ You must specify a server or run this within a registered Guild." })
     const username = interaction.options.getString("username", true)
     const logType = interaction.options.getString("type", true)
     const discordId = interaction.user.id

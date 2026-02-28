@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth-clerk"
 import { prisma } from "@/lib/db"
 import { PrcClient } from "@/lib/prc"
 import { NextResponse } from "next/server"
+import { isServerMember } from "@/lib/admin"
 
 export async function GET(req: Request) {
     const session = await getSession()
@@ -13,6 +14,10 @@ export async function GET(req: Request) {
     const query = searchParams.get("query")?.toLowerCase()
 
     if (!serverId || !query || query.length < 3) return NextResponse.json([])
+
+    if (!(await isServerMember(session.user as any, serverId))) {
+        return new NextResponse("Forbidden", { status: 403 })
+    }
 
     try {
         // 1. Search Recent Logs (Command/Join/Kill)

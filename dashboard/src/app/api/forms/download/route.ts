@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { readFile, stat } from "fs/promises"
 import path from "path"
+import { prisma } from "@/lib/db"
+import { getSession } from "@/lib/auth-clerk"
+import { isServerMember } from "@/lib/admin"
 
 // GET /api/forms/download - Serve uploaded files
 export async function GET(request: NextRequest) {
@@ -11,6 +14,17 @@ export async function GET(request: NextRequest) {
 
         if (!formId || !filename) {
             return NextResponse.json({ error: "Missing formId or file" }, { status: 400 })
+        }
+        
+        // Tenant Isolation: verify user can access this form's server
+        const session = await getSession()
+        if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+        
+        const form = await prisma.form.findUnique({ where: { id: formId } })
+        if (!form) return NextResponse.json({ error: "Form not found" }, { status: 404 })
+        
+        if (!await isServerMember(session.user as any, form.serverId)) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 })
         }
 
         // Sanitize inputs to prevent directory traversal

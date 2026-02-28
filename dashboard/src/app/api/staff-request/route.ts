@@ -2,11 +2,11 @@ import { getSession } from "@/lib/auth-clerk"
 import { prisma } from "@/lib/db"
 import { PrcClient } from "@/lib/prc"
 import { verifyPermissionOrError } from "@/lib/auth-permissions"
+import { getServerOverride } from "@/lib/config"
 import { NextResponse } from "next/server"
 
-// Rate limit: 1 request per 5 minutes per user
+// Rate limit: using in-memory map
 const rateLimitMap = new Map<string, number>()
-const RATE_LIMIT_MS = 5 * 60 * 1000 // 5 minutes
 
 export async function POST(req: Request) {
     const session = await getSession()
@@ -23,13 +23,14 @@ export async function POST(req: Request) {
         const permError = await verifyPermissionOrError(session.user, serverId, "canUseToolbox")
         if (permError) return permError
 
-        // Rate limit check
+        // Rate limit check - dynamic per server
+        const rateLimitMs = await getServerOverride(serverId, "staffRequestRateLimit")
         const userId = session.user.id
         const lastRequest = rateLimitMap.get(userId)
         const now = Date.now()
 
-        if (lastRequest && (now - lastRequest) < RATE_LIMIT_MS) {
-            const remainingSeconds = Math.ceil((RATE_LIMIT_MS - (now - lastRequest)) / 1000)
+        if (lastRequest && (now - lastRequest) < rateLimitMs) {
+            const remainingSeconds = Math.ceil((rateLimitMs - (now - lastRequest)) / 1000)
             return NextResponse.json({
                 error: `Rate limited. Please wait ${remainingSeconds} seconds before sending another staff request.`
             }, { status: 429 })

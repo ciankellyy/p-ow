@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth-clerk"
 import { SignJWT, jwtVerify } from "jose"
 import { verifyVisionSignature, visionCorsHeaders } from "@/lib/vision-auth"
+import { canAccessVision } from "@/lib/subscription"
 
 // Handle preflight requests
 export async function OPTIONS() {
@@ -25,6 +26,12 @@ export async function GET(req: Request) {
 
         if (!session?.user) {
             return NextResponse.json({ error: "Not authenticated" }, { status: 401, headers: visionCorsHeaders })
+        }
+
+        // Check if user has vision access (pro user plan or member of max server)
+        const hasAccess = await canAccessVision(session.user.id)
+        if (!hasAccess) {
+            return NextResponse.json({ error: "Vision access requires a Pro User subscription or membership in a Max tier server." }, { status: 403, headers: visionCorsHeaders })
         }
 
         // Create a JWT token for Vision

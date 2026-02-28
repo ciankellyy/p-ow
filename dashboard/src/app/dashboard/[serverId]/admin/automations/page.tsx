@@ -3,16 +3,15 @@
 import { useState, useEffect, use } from "react"
 import { Plus, Zap, Trash2, Edit2, Loader2 } from "lucide-react"
 import { AutomationEditor } from "./automation-editor"
-import { ConfirmModal } from "@/components/ui/confirm-modal"
+import { LimitIndicator, SubscriptionPromo } from "@/components/subscription/subscription-ui"
 
 interface Automation {
     id: string
     name: string
-    enabled: boolean
     trigger: string
-    conditions: string
-    actions: string
-    createdAt?: string
+    enabled: boolean
+    conditions: any
+    actions: any
 }
 
 export default function AutomationsPage({ params: paramsPromise }: { params: Promise<{ serverId: string }> }) {
@@ -20,12 +19,12 @@ export default function AutomationsPage({ params: paramsPromise }: { params: Pro
     const [automations, setAutomations] = useState<Automation[]>([])
     const [loading, setLoading] = useState(true)
     const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null)
-    const [creating, setCreating] = useState(false)
-    const [deleting, setDeleting] = useState<string | null>(null)
-    const [confirmId, setConfirmId] = useState<string | null>(null)
+    const [isCreating, setIsCreating] = useState(false)
+    const [limits, setLimits] = useState({ allowed: true, current: 0, max: 0 })
 
     useEffect(() => {
         fetchAutomations()
+        fetchLimits()
     }, [params.serverId])
 
     const fetchAutomations = async () => {
@@ -42,54 +41,68 @@ export default function AutomationsPage({ params: paramsPromise }: { params: Pro
         }
     }
 
-    const handleDelete = async (id: string) => {
-        setConfirmId(id)
+    const fetchLimits = async () => {
+        try {
+            const res = await fetch(`/api/server/${params.serverId}/plan`)
+            if (res.ok) {
+                const planInfo = await res.json()
+                // Assuming we have a dedicated endpoint for current usage, or we just calculate here
+                // For simplicity, we use the automations array length for current
+                setLimits({
+                    allowed: automations.length < planInfo.automations,
+                    current: automations.length, // This is technically a race condition but ok for UI
+                    max: planInfo.automations
+                })
+            }
+        } catch (e) { }
     }
+    
+    useEffect(() => {
+        if(limits.max > 0) {
+            setLimits(prev => ({ ...prev, allowed: automations.length < prev.max, current: automations.length }))
+        }
+    }, [automations])
 
-    const confirmDelete = async () => {
-        if (!confirmId) return
-        const id = confirmId
-        setConfirmId(null)
+    const handleDelete = async (id: string) => {
+        if (!confirm("Are you sure you want to delete this automation?")) return
 
-        setDeleting(id)
         try {
             const res = await fetch("/api/admin/automations", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, serverId: params.serverId })
+                body: JSON.stringify({ serverId: params.serverId, id })
             })
+
             if (res.ok) {
                 setAutomations(prev => prev.filter(a => a.id !== id))
             }
-        } catch (e) {
-            console.error("Failed to delete", e)
-        } finally {
-            setDeleting(null)
+        } catch (e) { }
+    }
+
+    const handleSave = (automation: Automation) => {
+        if (isCreating) {
+            setAutomations(prev => [automation, ...prev])
+            setIsCreating(false)
+        } else {
+            setAutomations(prev => prev.map(a => a.id === automation.id ? automation : a))
+            setEditingAutomation(null)
         }
     }
 
-    const handleSave = (savedAutomation: Automation) => {
-        // If it was an update, replace it. If new, add it.
-        setAutomations(prev => {
-            const index = prev.findIndex(a => a.id === savedAutomation.id)
-            if (index >= 0) {
-                // Determine if we should sort? For now just replace
-                const newArr = [...prev]
-                newArr[index] = savedAutomation
-                return newArr
-            } else {
-                return [savedAutomation, ...prev]
-            }
-        })
-        setCreating(false)
-        setEditingAutomation(null)
-    }
+    if (loading) return <div className="p-8 text-center text-zinc-500"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></div>
 
-    if (loading) {
+    if (isCreating || editingAutomation) {
         return (
-            <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
-            </div>
+            <AutomationEditor
+                serverId={params.serverId}
+                // @ts-ignore
+                initialData={editingAutomation || undefined}
+                onSave={handleSave}
+                onCancel={() => {
+                    setIsCreating(false)
+                    setEditingAutomation(null)
+                }}
+            />
         )
     }
 
@@ -98,111 +111,86 @@ export default function AutomationsPage({ params: paramsPromise }: { params: Pro
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-white mb-2">Automations</h1>
-                    <p className="text-zinc-400">Create triggers and actions to automate your server.</p>
+                    <p className="text-zinc-400 text-sm">Automate server moderation and operations.</p>
                 </div>
-                <button
-                    onClick={() => setCreating(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-colors font-medium"
-                >
-                    <Plus className="h-4 w-4" />
-                    New Automation
-                </button>
-            </div>
-
-            {automations.length === 0 ? (
-                <div className="bg-[#1a1a1a] rounded-xl border border-[#222] p-12 text-center">
-                    <div className="h-12 w-12 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
-                        <Zap className="h-6 w-6 text-zinc-500" />
-                    </div>
-                    <h3 className="text-lg font-medium text-white mb-2">No Automations</h3>
-                    <p className="text-zinc-500 max-w-sm mx-auto mb-6">
-                        Set up automated workflows to handle repetitive tasks like welcome messages, logging specific events, or syncing roles.
-                    </p>
+                <div className="flex items-center gap-4">
+                    <LimitIndicator current={limits.current} max={limits.max} label="Automations Usage" />
                     <button
-                        onClick={() => setCreating(true)}
-                        className="px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg hover:bg-indigo-500/20 transition-colors"
+                        onClick={() => setIsCreating(true)}
+                        disabled={!limits.allowed}
+                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                            limits.allowed 
+                            ? "bg-emerald-500 text-black hover:bg-emerald-400" 
+                            : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+                        }`}
                     >
-                        Create your first automation
+                        <Plus className="h-4 w-4" />
+                        Create Automation
                     </button>
                 </div>
-            ) : (
-                <div className="grid gap-4">
-                    {automations.map(automation => {
-                        const actionCount = JSON.parse(automation.actions || "[]").length
-                        return (
-                            <div
-                                key={automation.id}
-                                className="group bg-[#1a1a1a] border border-[#222] rounded-xl p-4 flex items-center justify-between hover:border-[#333] transition-all"
+            </div>
+
+            {!limits.allowed && (
+                <SubscriptionPromo 
+                    title="Automation Limit Reached"
+                    description="You have reached the maximum number of active automations for your current plan. Upgrade your server to unlock more powerful workflows."
+                />
+            )}
+
+            <div className="grid gap-4">
+                {automations.length === 0 ? (
+                    <div className="text-center py-12 bg-zinc-900/50 rounded-xl border border-white/10">
+                        <Zap className="h-12 w-12 text-zinc-600 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-white mb-2">No Automations</h3>
+                        <p className="text-zinc-400 mb-6">Create automations to handle repetitive tasks automatically.</p>
+                        {limits.allowed && (
+                            <button
+                                onClick={() => setIsCreating(true)}
+                                className="inline-flex items-center gap-2 bg-emerald-500 text-black px-4 py-2 rounded-lg font-medium hover:bg-emerald-400"
                             >
+                                <Plus className="h-4 w-4" /> Create One Now
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    automations.map(automation => {
+                        let parsedTrigger = automation.trigger
+                        if (parsedTrigger === "PLAYER_JOIN") parsedTrigger = "Player Joined"
+                        if (parsedTrigger === "PLAYER_LEAVE") parsedTrigger = "Player Left"
+
+                        return (
+                            <div key={automation.id} className="bg-zinc-900 border border-white/10 rounded-xl p-4 flex items-center justify-between hover:bg-zinc-800/50 transition-colors">
                                 <div className="flex items-center gap-4">
-                                    <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${automation.enabled ? 'bg-emerald-500/10 text-emerald-500' : 'bg-zinc-800 text-zinc-500'}`}>
+                                    <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${automation.enabled ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-800 text-zinc-500"}`}>
                                         <Zap className="h-5 w-5" />
                                     </div>
                                     <div>
-                                        <div className="flex items-center gap-2">
-                                            <h3 className="text-white font-medium">{automation.name}</h3>
-                                            {!automation.enabled && (
-                                                <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">
-                                                    Disabled
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="text-sm text-zinc-500 flex items-center gap-2 mt-0.5">
-                                            <span className="bg-[#222] px-1.5 py-0.5 rounded text-xs text-zinc-400 font-mono">
-                                                {automation.trigger}
-                                            </span>
-                                            <span>→</span>
-                                            <span>{actionCount} action{actionCount !== 1 ? 's' : ''}</span>
-                                        </div>
+                                        <h3 className="font-semibold text-white">{automation.name}</h3>
+                                        <p className="text-sm text-zinc-400">Trigger: {parsedTrigger}</p>
                                     </div>
                                 </div>
-
                                 <div className="flex items-center gap-2">
+                                    <span className={`px-2 py-1 text-xs rounded font-medium ${automation.enabled ? "bg-emerald-500/10 text-emerald-400" : "bg-zinc-800 text-zinc-400"}`}>
+                                        {automation.enabled ? "Active" : "Disabled"}
+                                    </span>
                                     <button
                                         onClick={() => setEditingAutomation(automation)}
-                                        className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                                        className="p-2 hover:bg-white/10 rounded-lg transition-colors text-zinc-400"
                                     >
                                         <Edit2 className="h-4 w-4" />
                                     </button>
                                     <button
                                         onClick={() => handleDelete(automation.id)}
-                                        disabled={deleting === automation.id}
-                                        className="p-2 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                        className="p-2 hover:bg-red-500/20 hover:text-red-400 rounded-lg transition-colors text-zinc-400"
                                     >
-                                        {deleting === automation.id ? (
-                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                            <Trash2 className="h-4 w-4" />
-                                        )}
+                                        <Trash2 className="h-4 w-4" />
                                     </button>
                                 </div>
                             </div>
                         )
-                    })}
-                </div>
-            )}
-
-            {(creating || editingAutomation) && (
-                <AutomationEditor
-                    serverId={params.serverId}
-                    automation={editingAutomation || undefined}
-                    onClose={() => {
-                        setCreating(false)
-                        setEditingAutomation(null)
-                    }}
-                    onSave={handleSave}
-                />
-            )}
-
-            <ConfirmModal
-                isOpen={!!confirmId}
-                onClose={() => setConfirmId(null)}
-                onConfirm={confirmDelete}
-                title="Delete Automation"
-                description="Are you sure you want to delete this automation? This action cannot be undone and any associated automated tasks will stop immediately."
-                confirmLabel="Delete Automation"
-                isLoading={!!deleting}
-            />
+                    })
+                )}
+            </div>
         </div>
     )
 }

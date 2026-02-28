@@ -33,6 +33,18 @@ model Server {
   customBotToken    String?   // Encrypted Discord bot token
   customBotEnabled  Boolean   @default(false)
   
+  // Custom Server Configuration Overrides
+  maxUploadSize         Int?      // In bytes
+  staffRequestRateLimit Int?      // In milliseconds
+  logCacheTtl           Int?      // In milliseconds
+  automationCacheTtl    Int?      // In milliseconds
+  
+  // Recruitment & Staff Features
+  recruitmentChannelId   String?   // Where applications go for review
+  congratsChannelId      String?   // Where celebrations/promotions are announced
+  applicationAiThreshold Int       @default(70) // 0-100 score required
+  autoStaffRoleId        String?   // Role to grant on approval
+  
   logs            Log[]
   punishments     Punishment[]
   shifts          Shift[]
@@ -42,6 +54,7 @@ model Server {
   automations     Automation[]
   botQueue        BotQueue[]
   forms           Form[]
+  apiKeys         ApiKey[]
 }
 
 model Log {
@@ -77,6 +90,7 @@ model Log {
   @@index([playerId])
   @@index([killerId])
   @@index([victimId])
+  @@unique([serverId, type, prcTimestamp]) // Unique constraint for createMany skipDuplicates
 }
 
 model Punishment {
@@ -145,6 +159,7 @@ model Member {
   id        String   @id @default(cuid())
   userId    String   // Clerk user ID
   discordId String?  // Discord user ID for bot lookups
+  robloxId  String?  // Roblox user ID
   isAdmin   Boolean  @default(false) // Can access admin panel
   
   server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
@@ -222,11 +237,16 @@ model ApiKey {
   createdAt   DateTime @default(now())
   lastUsed    DateTime?
 
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  serverId    String
+
   // Rate Limiting
   rateLimit   Int      @default(5)   // Seconds between requests
   dailyLimit  Int      @default(500) // Max requests per 24h
   usageCount  Int      @default(0)   // Requests today
   resetAt     DateTime @default(now()) // When usageCount resets
+
+  @@index([serverId])
 }
 
 model BannedIp {
@@ -251,6 +271,18 @@ model SecurityLog {
 // CommandQueue model removed - sync feature deprecated
 
 // FORMS FEATURE
+model UserAiUsage {
+  id        String   @id @default(cuid())
+  userId    String   // Clerk user ID
+  day       Int
+  month     Int      // 0-11
+  year      Int
+  count     Int      @default(0)
+  
+  @@unique([userId, day, month, year])
+  @@index([userId])
+}
+
 model Form {
   id          String   @id @default(cuid())
   serverId    String
@@ -268,6 +300,10 @@ model Form {
   allowMultiple   Boolean   @default(true)       // Allow multiple submissions per person
   maxResponses    Int?                           // Total response limit (null = unlimited)
   expiresAt       DateTime?                      // Form expiration date
+  
+  // Special Types
+  isApplication   Boolean   @default(false)      // If true, trigger recruitment workflow
+  acceptedRoleId  String?                        // Discord role to grant on acceptance
   
   // Discord Notifications
   notifyChannelId String?                        // Discord channel for notifications

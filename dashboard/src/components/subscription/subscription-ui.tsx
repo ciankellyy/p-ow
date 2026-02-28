@@ -129,12 +129,39 @@ export function LimitIndicator({
     const isAtLimit = current >= max
 
     return (
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-sm bg-zinc-900 px-3 py-1.5 rounded-lg border border-white/5">
             <span className="text-zinc-400">{label}:</span>
-            <span className={`font-medium ${isAtLimit ? "text-red-400" : isNearLimit ? "text-yellow-400" : "text-white"
+            <span className={`font-medium ${isAtLimit ? "text-red-400" : isNearLimit ? "text-yellow-400" : "text-emerald-400"
                 }`}>
                 {current} / {max === Infinity ? "∞" : max}
             </span>
+        </div>
+    )
+}
+
+export function SubscriptionPromo({ title, description }: { title: string, description: string }) {
+    return (
+        <div className="bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-zinc-900 border border-blue-500/20 rounded-xl p-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-6 opacity-10">
+                <Crown className="w-32 h-32 text-blue-500" />
+            </div>
+            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+                <div>
+                    <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                        <Zap className="h-5 w-5 text-blue-400" />
+                        {title}
+                    </h3>
+                    <p className="text-zinc-400 text-sm max-w-xl">
+                        {description}
+                    </p>
+                </div>
+                <Link
+                    href="/dashboard/subscription"
+                    className="whitespace-nowrap px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20"
+                >
+                    Upgrade Plan
+                </Link>
+            </div>
         </div>
     )
 }

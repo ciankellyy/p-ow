@@ -94,7 +94,7 @@ export function MembersListClient({ serverId, roles, servers, existingMembers }:
             null
     }
 
-    const handleRoleChange = async (user: ClerkUser, roleId: string | null) => {
+    const handleRoleChange = async (user: ClerkUser, roleId: string | null, isAdmin?: boolean) => {
         setUpdating(user.id)
 
         // Determine user ID to use (prefer roblox, then discord, then clerk)
@@ -107,7 +107,7 @@ export function MembersListClient({ serverId, roles, servers, existingMembers }:
                 await fetch("/api/admin/members/role", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ memberId: member.id, roleId })
+                    body: JSON.stringify({ memberId: member.id, roleId, isAdmin })
                 })
             } else {
                 // Create new member with role
@@ -116,6 +116,10 @@ export function MembersListClient({ serverId, roles, servers, existingMembers }:
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ serverId, userId, roleId })
                 })
+                // If making admin on new member, we'd need another call, but typically they need a role first.
+                if (isAdmin !== undefined) {
+                    // refresh first, then update (handled by subsequent interaction)
+                }
             }
 
             // Refresh member list
@@ -267,11 +271,21 @@ export function MembersListClient({ serverId, roles, servers, existingMembers }:
                                             </select>
                                         </td>
                                         <td className="px-4 py-3">
-                                            {member?.isAdmin && (
-                                                <span className="flex items-center gap-1 text-xs text-amber-400">
+                                            {member ? (
+                                                <button
+                                                    onClick={() => handleRoleChange(user, member.role?.id || null, !member.isAdmin)}
+                                                    disabled={updating === user.id}
+                                                    className={`flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors disabled:opacity-50 ${
+                                                        member.isAdmin 
+                                                            ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20" 
+                                                            : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                                                    }`}
+                                                >
                                                     <Shield className="h-3 w-3" />
-                                                    Admin
-                                                </span>
+                                                    {member.isAdmin ? "Admin" : "Make Admin"}
+                                                </button>
+                                            ) : (
+                                                <span className="text-xs text-zinc-600">Assign role first</span>
                                             )}
                                         </td>
                                     </tr>

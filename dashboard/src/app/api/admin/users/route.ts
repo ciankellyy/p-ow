@@ -1,12 +1,12 @@
-
 import { getSession } from "@/lib/auth-clerk"
+import { isSuperAdmin } from "@/lib/admin"
 import { clerkClient } from "@clerk/nextjs/server"
 import { NextResponse } from "next/server"
 
-// Get all Clerk users for admin panel
+// Get all Clerk users for admin panel - Superadmin only
 export async function GET(req: Request) {
     const session = await getSession()
-    if (!session) return new NextResponse("Unauthorized", { status: 401 })
+    if (!session || !isSuperAdmin(session.user)) return new NextResponse("Unauthorized", { status: 401 })
 
     try {
         const { searchParams } = new URL(req.url)

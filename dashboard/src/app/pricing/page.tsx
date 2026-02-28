@@ -1,4 +1,4 @@
-import { PricingTable } from "@/components/pricing/pricing-table"
+import { PricingTable } from "@clerk/nextjs"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { isFeatureEnabled } from "@/lib/feature-flags"

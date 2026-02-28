@@ -29,8 +29,10 @@ export async function POST(req: Request) {
             })
         }
 
-        const promises = servers.map(async (server: any) => {
-            if (!server.apiUrl) return
+        const syncResults = []
+
+        for (const server of servers) {
+            if (!server.apiUrl) continue
 
             const syncStart = Date.now()
             try {
@@ -41,16 +43,15 @@ export async function POST(req: Request) {
                 await AutomationEngine.tick(server.id)
 
                 trackSyncCycle(server.id, Date.now() - syncStart, res.newLogsCount, "ok")
-                return { serverId: server.id, newLogs: res.newLogsCount }
+                syncResults.push({ serverId: server.id, newLogs: res.newLogsCount })
             } catch (e: any) {
                 trackSyncCycle(server.id, Date.now() - syncStart, 0, "error", e.message)
-                throw e
+                // Log but don't stop the whole sync for one server failure
+                console.error(`[SYNC] Failed for server ${server.id}:`, e.message)
             }
-        })
+        }
 
-        const data = await Promise.all(promises)
-
-        return NextResponse.json({ success: true, results: data })
+        return NextResponse.json({ success: true, results: syncResults })
     } catch (e: any) {
         return new NextResponse(e.message, { status: 500 })
     }

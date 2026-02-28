@@ -4,13 +4,13 @@ import { prisma } from "@/lib/db"
 import { isServerAdmin } from "@/lib/admin"
 import { NextResponse } from "next/server"
 
-// Update member's role
+// Update member's role and admin status
 export async function PATCH(req: Request) {
     const session = await getSession()
     if (!session) return new NextResponse("Unauthorized", { status: 401 })
 
     try {
-        const { memberId, roleId } = await req.json()
+        const { memberId, roleId, isAdmin } = await req.json()
 
         if (!memberId) {
             return NextResponse.json({ error: "Missing memberId" }, { status: 400 })
@@ -31,14 +31,18 @@ export async function PATCH(req: Request) {
             return NextResponse.json({ error: "Access denied" }, { status: 403 })
         }
 
+        const dataToUpdate: any = {}
+        if (roleId !== undefined) dataToUpdate.roleId = roleId || null
+        if (isAdmin !== undefined) dataToUpdate.isAdmin = isAdmin
+
         await prisma.member.update({
             where: { id: memberId },
-            data: { roleId: roleId || null }
+            data: dataToUpdate
         })
 
         return NextResponse.json({ success: true })
     } catch (e) {
-        console.error("Member role update error:", e)
-        return NextResponse.json({ error: "Failed to update member role" }, { status: 500 })
+        console.error("Member update error:", e)
+        return NextResponse.json({ error: "Failed to update member" }, { status: 500 })
     }
 }

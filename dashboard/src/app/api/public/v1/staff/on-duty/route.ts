@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db"
-import { validatePublicApiKey, findServerByName, logApiAccess } from "@/lib/public-auth"
+import { validatePublicApiKey, resolveServer, logApiAccess } from "@/lib/public-auth"
 import { createClerkClient } from "@clerk/nextjs/server"
 import { NextResponse } from "next/server"
 
@@ -10,9 +10,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
     const serverName = searchParams.get("server")
 
-    if (!serverName) return NextResponse.json({ error: "Missing server name" }, { status: 400 })
-
-    const server = await findServerByName(serverName)
+    const server = await resolveServer(auth.apiKey)
     if (!server) {
         return NextResponse.json({ error: "Server not found" }, { status: 404 })
     }

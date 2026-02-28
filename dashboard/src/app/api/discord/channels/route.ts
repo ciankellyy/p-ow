@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/auth-clerk"
 import { prisma } from "@/lib/db"
 import { NextResponse } from "next/server"
+import { isServerMember } from "@/lib/admin"
 
 export async function GET(req: Request) {
     const session = await getSession()
@@ -11,6 +12,10 @@ export async function GET(req: Request) {
 
     if (!serverId) {
         return new NextResponse("Missing serverId", { status: 400 })
+    }
+
+    if (!(await isServerMember(session.user as any, serverId))) {
+        return new NextResponse("Forbidden", { status: 403 })
     }
 
     // Get server config
@@ -24,7 +29,7 @@ export async function GET(req: Request) {
 
     // Fetch channels from Discord via bot
     try {
-        const botToken = process.env.DISCORD_BOT_TOKEN
+        const botToken = server?.customBotEnabled && server?.customBotToken ? server.customBotToken : process.env.DISCORD_BOT_TOKEN
         if (!botToken) {
             console.error("DISCORD_BOT_TOKEN not set")
             return NextResponse.json([])

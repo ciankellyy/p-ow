@@ -1,10 +1,12 @@
 import { ChatInputCommandInteraction, EmbedBuilder } from "discord.js"
 import { prisma } from "../client"
+import { resolveServer } from "../lib/server-resolve"
 import { PrcClient } from "../lib/prc"
 import { findMemberByDiscordId, getRobloxUsername, getClerkUserByDiscordId } from "../lib/clerk"
 
 export async function handleStaffRequestCommand(interaction: ChatInputCommandInteraction) {
-    const serverId = interaction.options.getString("server", true)
+    const serverId = await resolveServer(interaction)
+    if (!serverId) return interaction.editReply({ content: "❌ You must specify a server or run this within a registered Guild." })
     const reason = interaction.options.getString("reason", true)
     const discordId = interaction.user.id
 

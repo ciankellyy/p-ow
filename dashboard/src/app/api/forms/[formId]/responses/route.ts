@@ -130,10 +130,10 @@ export async function GET(
         // Export as CSV
         if (format === "csv") {
             // Check feature flags and plan limits
-            const { isFeatureEnabled } = await import("@/lib/feature-flags")
+            const { isServerFeatureEnabled } = await import("@/lib/feature-flags")
             const { getServerPlan } = await import("@/lib/subscription")
 
-            const exportsEnabled = await isFeatureEnabled('EXPORTS')
+            const exportsEnabled = await isServerFeatureEnabled('EXPORTS', form.serverId)
             const { hasExports } = await getServerPlan(form.serverId)
 
             if (!exportsEnabled || !hasExports) {
