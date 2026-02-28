@@ -6,9 +6,14 @@ import { NextResponse } from "next/server"
 const INTERNAL_SECRET = process.env.INTERNAL_SYNC_SECRET!
 
 export async function POST(req: Request) {
+    if (!INTERNAL_SECRET) {
+        console.error("[SECURITY] INTERNAL_SYNC_SECRET is not set. Sync disabled.")
+        return new NextResponse("Server Configuration Error", { status: 500 })
+    }
+
     const authHeader = req.headers.get("x-internal-secret")
 
-    if (authHeader !== INTERNAL_SECRET) {
+    if (!authHeader || authHeader !== INTERNAL_SECRET) {
         return new NextResponse("Unauthorized", { status: 401 })
     }
 

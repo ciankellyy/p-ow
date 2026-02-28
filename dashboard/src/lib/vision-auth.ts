@@ -1,8 +1,11 @@
 import crypto from "crypto"
 
 // Shared secret for HMAC verification - must match Vision desktop app
-// Fallback to hardcoded value if env var not set (for development/first deploys)
-const VISION_HMAC_SECRET = process.env.VISION_HMAC_SECRET || 'pow-vision-hmac-secret-2024'
+const VISION_HMAC_SECRET = process.env.VISION_HMAC_SECRET!
+
+if (!VISION_HMAC_SECRET) {
+    console.error("[SECURITY] VISION_HMAC_SECRET is not set in environment variables. Vision auth will fail.")
+}
 
 /**
  * Verifies the HMAC signature from Vision app headers.
@@ -10,7 +13,7 @@ const VISION_HMAC_SECRET = process.env.VISION_HMAC_SECRET || 'pow-vision-hmac-se
  * Signature = HMAC-SHA256(timestamp:instanceId, secret)
  */
 export function verifyVisionSignature(header: string | null): boolean {
-    if (!header) return false
+    if (!header || !VISION_HMAC_SECRET) return false
 
     const parts = header.split(':')
     if (parts.length !== 3) return false
@@ -31,11 +34,16 @@ export function verifyVisionSignature(header: string | null): boolean {
         .update(message)
         .digest('hex')
 
+    const sigBuffer = Buffer.from(signature)
+    const expectedBuffer = Buffer.from(expectedSig)
+
+    // Ensure lengths match to prevent timing attacks/crashes
+    if (sigBuffer.length !== expectedBuffer.length) {
+        return false
+    }
+
     // Constant-time comparison to prevent timing attacks
-    return crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expectedSig)
-    )
+    return crypto.timingSafeEqual(sigBuffer, expectedBuffer)
 }
 
 export const visionCorsHeaders = {
