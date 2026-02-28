@@ -12,19 +12,6 @@ npm install
 npm run dev
 ```
 
-## Building
-
-```bash
-# Build for Windows
-npm run build:win
-
-# Build for Mac
-npm run build:mac
-
-# Build for all platforms
-npm run build:all
-```
-
 ## Features
 
 - **OCR Player Detection** - Press Alt+V to scan and detect player name

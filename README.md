@@ -73,21 +73,6 @@ p-ow/
    cd vision && npm run dev
    ```
 
-## 📦 Deployment
-
-Use the included `deploy.sh` script for zero-downtime deployments:
-
-```bash
-./deploy.sh
-```
-
-This script will:
-- Prompt for required secrets (first-time only)
-- Build all components
-- Run database migrations
-- Switch traffic to the new release atomically
-- Keep the last 3 releases for easy rollback
-
 ## 🔑 Environment Variables
 
 See `.env.example` for all required variables. Key ones include:
